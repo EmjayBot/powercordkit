@@ -1,14 +1,25 @@
-# Deploy the static labs (./public) to GitHub Pages.
-# The labs are pure static HTML — everything except Mail's /api + /hooks
-# works on Pages with no backend. Mail shows its offline demo seed there.
+# Deploy the tools-only site (dist/tools) to GitHub Pages.
+# Built from ./public by scripts/build-tools.mjs: labs + setup guide,
+# no Mail backend (Mail/Tickets/Ideas show their offline demo state).
+# Full site (Worker + D1) stays on Cloudflare; Pages is the free static mirror.
 #
 # Setup: repo Settings > Pages > Source: "GitHub Actions".
-# Custom domain (recommended, required for absolute paths like /mail/):
-#   Settings > Pages > Custom domain, e.g. powercordkit.emjay.fyi
+# Custom domain (recommended, required for absolute paths like /embeds/):
+#   Settings > Pages > Custom domain, e.g. tools.example.com
 # Without a custom domain this only works on a *user* site
 # (<user>.github.io, served at root) — project subpaths
 # (<user>.github.io/<repo>/) are NOT supported (absolute asset paths).
-name: Deploy labs to GitHub Pages
+name: Deploy tools to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "public/**"
+      - "scripts/build-tools.mjs"
+      - "package.json"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
 
 on:
   push:
@@ -35,9 +46,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:tools
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: public
+          path: dist/tools
       - id: deployment
         uses: actions/deploy-pages@v4
