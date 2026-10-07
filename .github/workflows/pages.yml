@@ -21,14 +21,6 @@ on:
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - "public/**"
-      - ".github/workflows/pages.yml"
-  workflow_dispatch:
-
 permissions:
   contents: read
   pages: write
