@@ -1,11 +1,7 @@
 {
-  "$comment": "Identity for a self-hosted tools-only site (npm run build:tools). This is YOUR toolset skin — the showcase at powercordkit.emjay.fyi keeps its own look. Keep the Powered-by-PowerCordKit credit (LICENSE.md).",
+  "$comment": "Identity for a self-hosted tools-only site (npm run build:tools). Utility index only — no hero, no marketing. The showcase at powercordkit.emjay.fyi keeps its own look. Keep the Powered-by-PowerCordKit credit (LICENSE.md).",
   "siteName": "Community Toolset",
-  "kicker": "community toolset",
-  "heroTitle": "Your Discord toolbox.",
-  "heroSub": "Every lab your mods need — embeds, markdown, timestamps, colors, webhooks and more. Free to use, no account, works offline.",
-  "primaryCta": "Browse labs",
-  "primaryCtaHref": "#labs",
+  "tagline": "7 static labs for Discord mods — no account, no backend, works offline.",
   "accent": "#5865F2",
   "footerNote": "A PowerCordKit toolset · Powered by PowerCordKit"
 }
