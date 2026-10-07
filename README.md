@@ -2,6 +2,8 @@
 
 Discord mod tools suite + Unified Mod Inbox.
 
+Repo: **https://github.com/EmjayBot/powercordkit** · Live labs: `emjaybot.github.io/powercordkit` (attach a custom domain — project subpaths aren't supported, see below).
+
 - Personal suite: **https://powercordkit.emjay.fyi** (`/` hub, `/mail/` inbox) — `wrangler.jsonc`, your personal Cloudflare account
 - Community mail: **https://mod.tep.one** — `wrangler.community.jsonc`, the **community's own Cloudflare account** (separate Worker, separate D1, separate secrets)
 
@@ -77,7 +79,8 @@ publishes `./public` (`.nojekyll` + `404.html` included).
 ## Quick start (local)
 
 ```powershell
-cd C:\Users\ricky\powercordkit
+git clone https://github.com/EmjayBot/powercordkit.git
+cd powercordkit
 npm install
 Copy-Item .dev.vars.example .dev.vars
 npm run db:migrate:local
