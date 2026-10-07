@@ -73,8 +73,55 @@ async function timingSafeEqualString(a: string, b: string): Promise<boolean> {
   return crypto.subtle.timingSafeEqual(ae, be);
 }
 
-async function verifyDiscourseSignature(
-  rawBody: string,
+async function sha256hex(s: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Multi-server ingest auth. Passes when ANY holds:
+//  - a global webhook secret matches (X-Powercordkit-Secret / X-Forum-Secret),
+//  - the per-server token matches (X-Server-Token vs server_tokens hash),
+//  - nothing is configured at all (local dev with zero secrets and zero tokens).
+async function checkIngestAuth(
+  db: D1Database,
+  env: Bindings,
+  headers: Headers,
+  server: string,
+): Promise<boolean> {
+  const givenGlobal = headers.get('X-Powercordkit-Secret') ?? headers.get('X-Forum-Secret') ?? '';
+  const secrets = [env.DISCORD_WEBHOOK_SECRET, env.FORUM_WEBHOOK_SECRET].filter(
+    (s): s is string => !!s,
+  );
+  for (const s of secrets) {
+    if (givenGlobal && (await timingSafeEqualString(givenGlobal, s))) return true;
+  }
+  const givenToken = headers.get('X-Server-Token') ?? '';
+  if (givenToken && server) {
+    const row = await db
+      .prepare(`SELECT token_hash FROM server_tokens WHERE server = ?`)
+      .bind(server)
+      .first<{ token_hash: string }>();
+    if (row && (await timingSafeEqualString(await sha256hex(givenToken), row.token_hash))) {
+      return true;
+    }
+  }
+  if (secrets.length === 0 && !givenToken) {
+    const any = await db.prepare(`SELECT 1 FROM server_tokens LIMIT 1`).first();
+    if (!any) return true;
+  }
+  return false;
+}
+
+// Admin gate for server-token management: the global Discord secret doubles
+// as the admin key (open only when no secret is configured, i.e. local dev).
+async function requireAdminKey(env: Bindings, headers: Headers): Promise<boolean> {
+  const s = env.DISCORD_WEBHOOK_SECRET;
+  if (!s) return true;
+  const given = headers.get('X-Powercordkit-Secret') ?? '';
+  return timingSafeEqualString(given, s);
+}
+
+async function verifyDiscourseSignature(  rawBody: string,
   signatureHeader: string | null,
   secret: string,
 ): Promise<boolean> {
@@ -401,15 +448,10 @@ app.post('/hooks/discourse', async (c) => {
   }
 });
 
-// Discord bot / context-menu webhook: POST /hooks/discord with X-Powercordkit-Secret
+// Discord bot / context-menu webhook: POST /hooks/discord.
+// Auth: global secret (X-Powercordkit-Secret) or per-server X-Server-Token.
 app.post('/hooks/discord', async (c) => {
   try {
-    const secret = c.env.DISCORD_WEBHOOK_SECRET;
-    if (secret) {
-      const given = c.req.header('X-Powercordkit-Secret') ?? '';
-      const ok = await timingSafeEqualString(given, secret);
-      if (!ok) return bad('Bad secret', 401);
-    }
     const body = await c.req.json<{
       server?: string; type?: string; title?: string; content?: string; author?: string; by?: string; url?: string; prio?: string;
     }>();
@@ -431,6 +473,9 @@ app.post('/hooks/discord', async (c) => {
       archived: 0,
       created_at: new Date().toISOString(),
     };
+    if (!(await checkIngestAuth(c.env.DB, c.env, c.req.raw.headers, row.server))) {
+      return bad('Bad secret', 401);
+    }
     await c.env.DB.prepare(
       `INSERT INTO inbox_items (id, server, type, tag, author, title, content, time, prio, src, by, url, assigned, archived, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -462,12 +507,11 @@ app.post('/hooks/:name', async (c) => {
       name === 'discourse' ||
       (FORUM_ADAPTERS as readonly string[]).includes(name);
     if (!known) return bad('Unknown adapter: ' + name, 404);
-    const secret = c.env.FORUM_WEBHOOK_SECRET ?? c.env.DISCORD_WEBHOOK_SECRET;
-    if (secret) {
-      const given = c.req.header('X-Forum-Secret') ?? c.req.header('X-Powercordkit-Secret') ?? '';
-      if (!(await timingSafeEqualString(given, secret))) return bad('Bad secret', 401);
-    }
     const body = await c.req.json<InboxInput>();
+    const server = ((body.server ?? '') || defaultServer(c.env)).slice(0, 80);
+    if (!(await checkIngestAuth(c.env.DB, c.env, c.req.raw.headers, server))) {
+      return bad('Bad secret', 401);
+    }
     const row = await insertInboxItem(c.env.DB, {
       ...body,
       src: name,
@@ -480,6 +524,80 @@ app.post('/hooks/:name', async (c) => {
     if (msg === 'title is required' || msg === 'server is required') return bad(msg);
     jsonLog('error', 'forum adapter webhook failed', { error: msg });
     return bad('Webhook failed', 500);
+  }
+});
+
+// Live server registry, derived from actual inbox data — works for any number
+// of servers with zero configuration. `locked` = a per-server token exists.
+app.get('/api/servers', async (c) => {
+  try {
+    const res = await c.env.DB.prepare(
+      `SELECT server, type, COUNT(*) AS n FROM inbox_items WHERE archived = 0 GROUP BY server, type ORDER BY server`,
+    ).all<{ server: string; type: string; n: number }>();
+    const map = new Map<string, { server: string; count: number; types: Set<string> }>();
+    for (const r of res.results ?? []) {
+      let e = map.get(r.server);
+      if (!e) {
+        e = { server: r.server, count: 0, types: new Set() };
+        map.set(r.server, e);
+      }
+      e.count += r.n;
+      e.types.add(r.type);
+    }
+    const toks = await c.env.DB.prepare(`SELECT server FROM server_tokens`).all<{
+      server: string;
+    }>();
+    const locked = new Set((toks.results ?? []).map((t) => t.server));
+    return c.json({
+      ok: true,
+      servers: [...map.values()].map((s) => ({
+        server: s.server,
+        count: s.count,
+        types: [...s.types],
+        locked: locked.has(s.server),
+      })),
+    });
+  } catch (err) {
+    jsonLog('error', 'servers list failed', { error: String(err) });
+    return bad('Failed to list servers', 500);
+  }
+});
+
+// Mint (or rotate) a per-server ingestion token. Returns the plaintext token
+// ONCE — save it: bots send it as X-Server-Token scoped to `server`.
+// Admin auth: global X-Powercordkit-Secret.
+app.post('/api/servers/:id/token', async (c) => {
+  try {
+    if (!(await requireAdminKey(c.env, c.req.raw.headers))) return bad('Admin key required', 401);
+    const server = c.req.param('id');
+    if (!server || !server.trim()) return bad('server is required', 400);
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const token = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+    await c.env.DB.prepare(
+      `INSERT INTO server_tokens (server, token_hash, created_at) VALUES (?, ?, ?)
+       ON CONFLICT(server) DO UPDATE SET token_hash = excluded.token_hash, created_at = excluded.created_at`,
+    )
+      .bind(server, await sha256hex(token), new Date().toISOString())
+      .run();
+    jsonLog('info', 'server token minted', { server });
+    return c.json({ ok: true, server, token }, 201);
+  } catch (err) {
+    jsonLog('error', 'server token mint failed', { error: String(err) });
+    return bad('Failed to mint token', 500);
+  }
+});
+
+// Revoke a server's token (falls back to global-secret auth for that server).
+app.delete('/api/servers/:id/token', async (c) => {
+  try {
+    if (!(await requireAdminKey(c.env, c.req.raw.headers))) return bad('Admin key required', 401);
+    await c.env.DB.prepare(`DELETE FROM server_tokens WHERE server = ?`)
+      .bind(c.req.param('id'))
+      .run();
+    return c.json({ ok: true });
+  } catch (err) {
+    jsonLog('error', 'server token revoke failed', { error: String(err) });
+    return bad('Failed to revoke token', 500);
   }
 });
 

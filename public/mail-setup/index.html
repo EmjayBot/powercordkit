@@ -100,6 +100,12 @@ curl https://&lt;your-worker&gt;.workers.dev/api/health   # expect {"ok":true,"e
        "content":"User @x posting invites (thread #ticket-128)",
        "author":"mod_bot","by":"auto-capture","url":"https://discord.com/channels/…"}'</pre>
   <p>Fields: <code>server</code> (default <code>general</code>, configurable via <code>DEFAULT_SERVER</code>), <code>type</code> (<code>idea|support|ticket|mailed</code>), <code>title*</code>, <code>content</code>, <code>author</code>, <code>by</code>, <code>url</code> (jump link), <code>prio</code>. Missing/wrong secret → 401. Auto-capture: call it on <code>MESSAGE_CREATE</code> (ideas channel), <code>THREAD_CREATE</code> (ticket threads).</p>
+  <p><b>Multiple servers:</b> no configuration needed — any <code>server</code> value is accepted and <code>GET /api/servers</code> derives the live registry (with per-type counts) from inbox data; the inbox UI builds its filters from it. To scope a bot to one server, mint a per-server token (admin auth = global <code>X-Powercordkit-Secret</code>; shown once, store it):</p>
+  <pre><button class="copy">Copy</button>curl -X POST https://&lt;your-host&gt;/api/servers/my-server/token \
+  -H 'X-Powercordkit-Secret: &lt;DISCORD_WEBHOOK_SECRET&gt;'
+# → {"ok":true,"server":"my-server","token":"…"}
+# bots then send -H 'X-Server-Token: …' instead of the global secret.
+# revoke: curl -X DELETE …/api/servers/my-server/token -H 'X-Powercordkit-Secret: …'</pre>
 
   <h2 id="s9"><span class="n">9</span>Other forums (NodeBB, Flarum, Lemmy, custom)</h2>
   <pre><button class="copy">Copy</button>curl -X POST https://&lt;your-host&gt;/hooks/nodebb \
