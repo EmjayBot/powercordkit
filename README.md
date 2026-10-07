@@ -30,7 +30,12 @@ Stack: Cloudflare Workers (Hono) + Static Assets (`./public`) + D1 (`migrations/
 Anyone can run the labs without the Mail backend. `npm run build:tools`
 packages `./public` into `dist/tools/`: drops Mail/Tickets/Ideas, swaps the
 hub's Mail + API sections for a **Mail setup guide** card (`/mail-setup/`,
-included), repoints Mail links to the guide.
+included), repoints Mail links to the guide — and skins the hub with YOUR
+identity from `tools.config.json` (name, hero, accent, footer), so a
+self-hosted toolset never looks like a clone of the showcase. Copy it to
+e.g. `tools.tep.json`, tweak, and build with
+`node scripts/build-tools.mjs --config tools.tep.json`. The
+Powered-by-PowerCordKit credit is enforced by the build (LICENSE.md).
 
 ```powershell
 npm run build:tools        # → dist/tools/ (gitignored)
