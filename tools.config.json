@@ -3,5 +3,6 @@
   "siteName": "Community Toolset",
   "tagline": "7 static labs for Discord mods — no account, no backend, works offline.",
   "accent": "#5865F2",
-  "footerNote": "A PowerCordKit toolset · Powered by PowerCordKit"
+  "baseUrl": "/",
+  "footerNote": "Powered by PowerCordKit"
 }

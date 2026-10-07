@@ -30,13 +30,15 @@ Stack: Cloudflare Workers (Hono) + Static Assets (`./public`) + D1 (`migrations/
 Anyone can run the labs without the Mail backend. `npm run build:tools`
 packages `./public` into `dist/tools/`: drops Mail/Tickets/Ideas, swaps the
 hub's Mail + API sections for a **Mail setup guide** card (`/mail-setup/`,
-included), repoints Mail links to the guide — and generates a pure utility
-hub (no hero, no marketing, no scripts) skinned with YOUR identity from
-`tools.config.json` (name, tagline, accent, footer), so a self-hosted
-toolset never looks like a clone of the showcase. Lab cards and CSS are
-lifted from the showcase hub so they never drift. Copy the config to
-e.g. `tools.tep.json`, tweak, and build with
-`node scripts/build-tools.mjs --config tools.tep.json`. The
+included), repoints Mail links to the guide — and generates a blank-slate
+utility hub (no header, no hero, no section titles — just tool cards, the
+setup card, and the Powered-by-PowerCordKit footer) skinned from
+`tools.config.json` (`siteName`, `tagline`, `accent`, `baseUrl`,
+`footerNote`). Forks set their own name and links: `baseUrl: "/"` for
+domain root, `"/my-tools/"` for a subpath (this also makes GitHub Pages
+project sites work). Lab cards and CSS are lifted from the showcase hub so
+they never drift. Copy the config to e.g. `tools.tep.json`, tweak, and
+build with `node scripts/build-tools.mjs --config tools.tep.json`. The
 Powered-by-PowerCordKit credit is enforced by the build (LICENSE.md).
 
 ```powershell

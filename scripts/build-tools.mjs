@@ -17,7 +17,7 @@ const identityFile = process.argv.includes('--config')
   ? process.argv[process.argv.indexOf('--config') + 1]
   : join(ROOT, 'tools.config.json');
 const identity = JSON.parse(readFileSync(identityFile, 'utf8'));
-for (const k of ['siteName', 'tagline', 'accent', 'footerNote']) {
+for (const k of ['siteName', 'tagline', 'accent', 'footerNote', 'baseUrl']) {
   if (!identity[k] || typeof identity[k] !== 'string') {
     console.error(`tools identity ${identityFile} missing required string: ${k}`);
     process.exit(1);
@@ -27,6 +27,12 @@ if (!identity.footerNote.includes('PowerCordKit')) {
   console.error('tools identity footerNote must keep the Powered-by-PowerCordKit credit');
   process.exit(1);
 }
+let base = identity.baseUrl;
+if (!base.startsWith('/')) {
+  console.error('tools identity baseUrl must start with / (use "/" for domain root)');
+  process.exit(1);
+}
+if (!base.endsWith('/')) base += '/';
 
 // Backend-dependent pages excluded from the tools-only site.
 const PRUNE = ['mail', 'tickets', 'ideas'];
@@ -38,9 +44,10 @@ for (const entry of readdirSync(join(ROOT, 'public'))) {
   cpSync(join(ROOT, 'public', entry), join(out, entry), { recursive: true });
 }
 
-// Utility hub: no hero, no marketing — just the tools. Lab cards and CSS
-// are lifted from the showcase hub so they never drift; everything else is
-// generated from the instance identity.
+// Blank-slate hub: no header, no hero, no section titles — just the tool
+// cards, the setup card, and the credit footer. Lab cards and CSS are lifted
+// from the showcase hub so they never drift. Forks customize name/links via
+// the identity file (siteName, baseUrl) — title tag + footer carry identity.
 const hubPath = join(out, 'index.html');
 const showcase = readFileSync(hubPath, 'utf8');
 const css = (showcase.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
@@ -60,36 +67,40 @@ const hub = `<!DOCTYPE html>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${escAttr(identity.siteName)} — Discord Tools</title>
+<meta name="description" content="${escAttr(identity.tagline)}" />
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>${css.replace('--b:#5865F2', `--b:${identity.accent}`)}</style>
 </head>
 <body>
-<div class="nav">
-  <a class="logo" href="/"><img src="/assets/powercordkit_logo.png" alt="" /> ${escAttr(identity.siteName)}</a>
-  <div class="links"><a href="#labs">Tools</a><a href="#inbox">Inbox</a></div>
-  <div class="sp"><span class="pill">static toolset</span></div>
+<div class="wrap" style="padding-top:28px">
+  ${labs}
+  <div class="grid" style="margin-top:12px"><a class="card" href="/mail-setup/"><h3>Mail setup guide</h3><p>Self-host the inbox in ~20 minutes: Worker, D1, secrets, domain, Discourse + Discord wiring.</p></a></div>
 </div>
-<div class="wrap" style="padding-top:24px">
-  <div class="sec" id="labs" style="margin-top:0">
-    <h2>Tools</h2>
-    <p class="sub">${escAttr(identity.tagline)}</p>
-    ${labs}
-  </div>
-  <div class="sec" id="inbox">
-    <h2>Need the mod inbox?</h2>
-    <p class="sub">This toolset is backend-free. The Mail inbox (triage, tickets, webhooks) is one Worker + D1 away.</p>
-    <div class="grid"><a class="card" href="/mail-setup/"><h3>Mail setup guide</h3><p>Self-host the inbox in ~20 minutes: Worker, D1, secrets, domain, Discourse + Discord wiring.</p></a></div>
-  </div>
-</div>
-<div class="foot"><div class="in">
-  <span>${identity.footerNote} · <a href="#labs">Tools</a> · <a href="/mail-setup/">Mail setup</a></span>
-  <span>static</span>
+<div class="foot"><div class="in" style="justify-content:center">
+  <span>${identity.footerNote}</span>
 </div></div>
 </body>
 </html>
 `;
 writeFileSync(hubPath, hub);
+
+// baseUrl: repoint every root-absolute link/asset in the tools site so forks
+// can live at domain root ("/") or any subpath ("/my-tools/").
+const bp = base === '/' ? '' : base.slice(0, -1);
+const rewriteFile = (p) => {
+  let t = readFileSync(p, 'utf8');
+  t = t.replace(/(href|src)="\/(?!\/)/g, `$1="${bp}/`);
+  writeFileSync(p, t);
+};
+const walkHtml = (dir) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) walkHtml(p);
+    else if (e.name.endsWith('.html')) rewriteFile(p);
+  }
+};
+walkHtml(out);
 
 // The setup guide ships with the tools site too — repoint its Mail-overview
 // back-links at the tools hub (no /mail/ route exists here).
