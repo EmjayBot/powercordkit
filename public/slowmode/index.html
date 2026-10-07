@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Slowmode Planner — PowerCordKit</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.top{height:54px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--p)}
+.top a{color:var(--t);text-decoration:none;font-weight:700;font-size:15px}.top img{width:28px;height:28px;border-radius:7px}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:1fr 380px;gap:16px}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h3{margin:0 0 12px 0;font-size:14px}
+.inp{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;color:var(--t);font-size:13px;outline:none;width:100%}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--m);text-align:left;padding:6px 8px}
+td{padding:6px 8px;border-top:1px solid var(--bd);vertical-align:middle}
+td input[type=number]{width:76px}
+.preset{display:inline-block;background:var(--p2);border:1px solid var(--bd);border-radius:999px;padding:5px 11px;font-size:11px;margin:0 6px 6px 0;cursor:pointer}
+.preset:hover{border-color:var(--b)}
+pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:11.5px;overflow:auto;max-height:340px;white-space:pre-wrap}
+.hint{font-size:12px;color:var(--m);line-height:1.6}
+.timeline{margin-top:8px}
+.slot{display:flex;align-items:center;gap:10px;font-size:12px;padding:8px 10px;background:var(--p2);border:1px solid var(--bd);border-radius:8px;margin-bottom:6px}
+.bar{height:8px;border-radius:99px;background:var(--b);min-width:8px}
+</style>
+</head>
+<body>
+<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Slowmode Planner</span></div>
+<div class="wrap">
+  <div>
+    <div class="card"><h3>Channels <button class="btn ghost" id="add" style="float:right;padding:5px 10px">+ Add</button></h3>
+      <div style="margin-bottom:10px"><span class="preset" data-p="5">Calm 5s</span><span class="preset" data-p="10">Night 10s</span><span class="preset" data-p="30">Raid 30s</span><span class="preset" data-p="60">Lockdown 60s</span><span class="preset" data-p="0">Off</span></div>
+      <table><thead><tr><th>Channel</th><th>Slowmode (s)</th><th>Schedule / note</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+      <div class="hint" style="margin-top:10px">Discord allows 0–21600s. Click a preset to apply it to <b>all</b> channels, or edit rows individually.</div>
+    </div>
+    <div class="card"><h3>Night schedule preview</h3><div class="timeline" id="tl"></div></div>
+  </div>
+  <div>
+    <div class="card"><h3>Bot config export</h3>
+      <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" style="flex:1">📬 Mail plan</button></div>
+      <pre class="out" id="out"></pre>
+      <div class="hint">Hand this JSON to your bot dev, or mail it to the mod inbox as a ticket for review.</div>
+    </div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let rows = [
+  { ch:'#general', s:10, note:'10s after 10pm, off at 7am' },
+  { ch:'#help', s:5, note:'always 5s' },
+  { ch:'#media', s:30, note:'30s weekends' },
+];
+function fmt(s){ if(s<=0) return 'off'; if(s<60) return s+'s'; const m=Math.floor(s/60); return m+'m'+(s%60?' '+(s%60)+'s':''); }
+function render(){
+  $('rows').innerHTML = rows.map((r,i) =>
+    '<tr><td><input class="inp" data-i="'+i+'" data-k="ch" value="'+r.ch.replace(/"/g,'&quot;')+'"/></td>'+
+    '<td><input class="inp" type="number" min="0" max="21600" data-i="'+i+'" data-k="s" value="'+r.s+'"/></td>'+
+    '<td><input class="inp" data-i="'+i+'" data-k="note" value="'+(r.note||'').replace(/"/g,'&quot;')+'"/></td>'+
+    '<td><button class="btn ghost" data-del="'+i+'">✕</button></td></tr>').join('');
+  document.querySelectorAll('#rows input').forEach(inp => inp.oninput = () => {
+    const i = +inp.dataset.i, k = inp.dataset.k;
+    rows[i][k] = k === 's' ? Math.max(0, Math.min(21600, +inp.value || 0)) : inp.value;
+    render();
+  });
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { rows.splice(+b.dataset.del,1); render(); });
+  $('tl').innerHTML = rows.map(r => {
+    const w = Math.min(100, (r.s/60)*100);
+    return '<div class="slot"><b style="min-width:90px">'+r.ch.replace(/</g,'&lt;')+'</b><div class="bar" style="width:'+Math.max(8,w)+'px"></div><span>'+fmt(r.s)+'</span><span style="color:var(--m)">'+(r.note||'').replace(/</g,'&lt;')+'</span></div>';
+  }).join('') || '<span style="color:var(--m);font-size:12px">No channels.</span>';
+  $('out').textContent = JSON.stringify({ tool:'slowmode-planner', version:1, exported_at:new Date().toISOString(),
+    channels: rows.map(r => ({ channel: r.ch, slowmode_seconds: r.s, schedule: r.note || '' })) }, null, 2);
+}
+document.querySelectorAll('.preset').forEach(p => p.onclick = () => { rows.forEach(r => r.s = +p.dataset.p); render(); });
+$('add').onclick = () => { rows.push({ch:'#new-channel', s:5, note:''}); render(); };
+$('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent); $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy JSON',1200); };
+$('mail').onclick = async () => {
+  const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ server:'staff', type:'ticket', title:'Slowmode plan for review', content:$('out').textContent.slice(0,8000), author:'you', by:'slowmode-planner', src:'discord' }) });
+  alert(r.ok ? 'Mailed to mod inbox ✓' : 'Mail API offline — run wrangler dev');
+};
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Embed Lab — PowerCordKit</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.top{height:54px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--p)}
+.top a{color:var(--t);text-decoration:none;font-weight:700;font-size:15px}.top img{width:28px;height:28px;border-radius:7px}
+.wrap{max-width:1200px;margin:0 auto;padding:24px 20px 80px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h3{margin:0 0 12px 0;font-size:14px}
+label{font-size:11px;color:var(--m);display:block;margin:10px 0 4px 0}
+.inp,textarea.inp{width:100%;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;color:var(--t);font-size:13px;outline:none;font-family:inherit}
+textarea.inp{resize:vertical;min-height:64px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
+.btnrow{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.dmsg{background:#313338;border-radius:8px;padding:14px 16px}
+.emb{background:#2b2d31;border-radius:8px;padding:12px 16px 12px 14px;border-left:4px solid var(--b);max-width:516px;font-size:14px}
+.emb .ea{font-size:11px;font-weight:600;color:#fff;display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.emb .ea img{width:20px;height:20px;border-radius:50%}
+.emb .et{font-weight:700}.emb .et a{color:#00a8fc;text-decoration:none}
+.emb .ed{font-size:13.5px;color:#dbdee1;margin-top:4px;white-space:pre-wrap}
+.emb .ef{display:grid;gap:8px;margin-top:10px}
+.emb .ef.inline{grid-template-columns:repeat(3,1fr)}
+.emb .fn{font-size:12px;font-weight:700;color:#fff}.emb .fv{font-size:12.5px;color:#dbdee1}
+.emb img.big{max-width:100%;border-radius:8px;margin-top:10px}
+.emb .ft{font-size:11px;color:#b5bac1;margin-top:8px;display:flex;gap:6px;align-items:center}
+.emb .ft img{width:18px;height:18px;border-radius:50%}
+.err{font-size:12px;color:#ed4245;margin-top:4px}.okline{font-size:12px;color:#3ba55d;margin-top:4px}
+pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:11.5px;overflow:auto;max-height:300px;white-space:pre-wrap}
+.frow{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:10px;margin-top:8px}
+.count{font-size:10px;color:var(--m);float:right}
+</style>
+</head>
+<body>
+<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Embed Lab</span></div>
+<div class="wrap">
+  <div>
+    <div class="card"><h3>Content</h3>
+      <label>Title <span class="count" id="c-title"></span></label><input class="inp" id="f-title" value="Server Update — October" maxlength="256" />
+      <label>Title URL (optional)</label><input class="inp" id="f-url" placeholder="https://…" />
+      <label>Description <span class="count" id="c-desc"></span></label><textarea class="inp" id="f-desc">Slowmode is now **10s** in #general after 10pm. React 🎨 to vote on the new embed color.</textarea>
+      <label>Color hex</label><div class="row"><input class="inp" id="f-color" value="#5865F2" /><a class="btn ghost" href="/color/" style="text-decoration:none;text-align:center">🎨 Lab</a></div>
+    </div>
+    <div class="card"><h3>Author / Footer</h3>
+      <div class="row"><div><label>Author name</label><input class="inp" id="f-aname" value="ModBot" /></div><div><label>Author icon URL</label><input class="inp" id="f-aicon" placeholder="https://…" /></div></div>
+      <div class="row"><div><label>Footer text</label><input class="inp" id="f-ftext" value="PowerCordKit • Mod Team" /></div><div><label>Footer icon URL</label><input class="inp" id="f-ficon" placeholder="https://…" /></div></div>
+      <label>Image URL (optional, big image)</label><input class="inp" id="f-image" placeholder="https://…" />
+    </div>
+    <div class="card"><h3>Fields <button class="btn ghost" id="add-f" style="float:right;padding:5px 10px">+ Add</button></h3><div id="fields"></div>
+      <div class="row" style="margin-top:8px"><div><label>Inline layout</label></div><div style="display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="f-inline" checked /> Inline fields</label></div></div>
+    </div>
+  </div>
+  <div>
+    <div class="card"><h3>Live preview</h3><div class="dmsg"><div class="emb" id="pv"></div></div><div id="valid"></div></div>
+    <div class="card"><h3>Export</h3>
+      <div class="btnrow"><button class="btn" id="copy">Copy JSON</button><button class="btn ghost" id="dl">Download .json</button><button class="btn ghost" id="mail">📬 Send to Mail</button></div>
+      <pre class="out" id="out"></pre>
+    </div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+let fields = [{n:'Slowmode',v:'#general → 10s after 10pm'},{n:'Color vote',v:'React with 🎨🎯'}];
+function md(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); }
+function build(){
+  const o = { title: $('f-title').value, url: $('f-url').value || undefined, description: $('f-desc').value,
+    color: parseInt(($('f-color').value.replace('#','') || '5865F2'),16) };
+  if($('f-aname').value) o.author = { name: $('f-aname').value, icon_url: $('f-aicon').value || undefined };
+  if(fields.length) o.fields = fields.map(f => ({ name: f.n, value: f.v, inline: $('f-inline').checked }));
+  if($('f-image').value) o.image = { url: $('f-image').value };
+  if($('f-ftext').value) o.footer = { text: $('f-ftext').value, icon_url: $('f-ficon').value || undefined };
+  return o;
+}
+function renderFields(){
+  $('fields').innerHTML = fields.map((f,i) =>
+    '<div class="frow"><div class="row"><input class="inp" data-i="'+i+'" data-k="n" value="'+esc(f.n)+'" maxlength="256"/><input class="inp" data-i="'+i+'" data-k="v" value="'+esc(f.v)+'" maxlength="1024"/></div><button class="btn ghost" data-del="'+i+'" style="margin-top:8px;padding:5px 10px">Remove</button></div>').join('') || '<div style="font-size:12px;color:var(--m)">No fields yet.</div>';
+  document.querySelectorAll('#fields input').forEach(inp => inp.oninput = () => { fields[+inp.dataset.i][inp.dataset.k] = inp.value; render(); });
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { fields.splice(+b.dataset.del,1); renderFields(); render(); });
+}
+function render(){
+  const o = build();
+  const col = '#' + (o.color >>> 0).toString(16).padStart(6,'0');
+  let h = '';
+  if(o.author) h += '<div class="ea">' + (o.author.icon_url ? '<img src="'+esc(o.author.icon_url)+'"/>' : '') + esc(o.author.name) + '</div>';
+  if(o.title) h += '<div class="et">' + (o.url ? '<a href="'+esc(o.url)+'">' + esc(o.title) + '</a>' : esc(o.title)) + '</div>';
+  if(o.description) h += '<div class="ed">' + md(o.description) + '</div>';
+  if(o.fields) h += '<div class="ef' + ($('f-inline').checked ? ' inline' : '') + '">' + o.fields.map(f=>'<div><div class="fn">'+esc(f.name)+'</div><div class="fv">'+md(f.value)+'</div></div>').join('') + '</div>';
+  if(o.image) h += '<img class="big" src="'+esc(o.image.url)+'"/>';
+  if(o.footer) h += '<div class="ft">' + (o.footer.icon_url ? '<img src="'+esc(o.footer.icon_url)+'"/>' : '') + esc(o.footer.text) + '</div>';
+  $('pv').innerHTML = h || '<span style="color:#888">Empty embed</span>';
+  $('pv').style.borderLeftColor = col;
+  $('c-title').textContent = (o.title||'').length + '/256';
+  $('c-desc').textContent = (o.description||'').length + '/4096';
+  const errs = [];
+  if((o.title||'').length > 256) errs.push('Title over 256 chars');
+  if((o.description||'').length > 4096) errs.push('Description over 4096 chars');
+  if((o.fields||[]).length > 25) errs.push('Max 25 fields');
+  (o.fields||[]).forEach((f,i)=>{ if(f.name.length>256) errs.push('Field '+(i+1)+' name over 256'); if(f.value.length>1024) errs.push('Field '+(i+1)+' value over 1024'); });
+  const total = JSON.stringify(o).length;
+  if(total > 6000) errs.push('Embed over 6000 chars total');
+  $('valid').innerHTML = errs.length ? errs.map(e=>'<div class="err">✖ '+e+'</div>').join('') : '<div class="okline">✔ Valid — ' + total + ' / 6000 chars, ' + (o.fields||[]).length + ' fields</div>';
+  $('out').textContent = JSON.stringify({ embeds: [o] }, null, 2);
+}
+document.querySelectorAll('.inp').forEach(el => el.addEventListener('input', render));
+$('f-inline').onchange = render;
+$('add-f').onclick = () => { if(fields.length >= 25) return alert('Max 25 fields'); fields.push({n:'New field',v:'Value'}); renderFields(); render(); };
+$('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent); $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy JSON',1200); };
+$('dl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([$('out').textContent],{type:'application/json'})); a.download = 'embed.json'; a.click(); };
+$('mail').onclick = async () => {
+  const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ server:'general', type:'idea', title:'Embed draft: ' + ($('f-title').value || 'untitled'), content:$('out').textContent.slice(0,8000), author:'you', by:'embed-lab', src:'discord' }) });
+  alert(r.ok ? 'Sent to Mail inbox ✓' : 'Mail API offline — run wrangler dev');
+};
+renderFields(); render();
+</script>
+</body>
+</html>

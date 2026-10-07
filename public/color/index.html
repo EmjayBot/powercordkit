@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Color Lab — PowerCordKit</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.top{height:54px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--p)}
+.top a{color:var(--t);text-decoration:none;font-weight:700;font-size:15px}.top img{width:28px;height:28px;border-radius:7px}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:340px 1fr;gap:16px}
+@media(max-width:860px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px}
+.card h3{margin:0 0 12px 0;font-size:14px}
+label{font-size:11px;color:var(--m);display:block;margin:12px 0 4px 0}
+.inp{width:100%;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;color:var(--t);font-size:13px;outline:none}
+.row{display:flex;gap:8px}.row .inp{flex:1}
+input[type=color]{width:100%;height:44px;border:1px solid var(--bd);border-radius:8px;background:var(--p2);padding:4px;cursor:pointer}
+.swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px}
+.sw{height:34px;border-radius:8px;cursor:pointer;border:1px solid var(--bd)}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700;cursor:pointer;width:100%;margin-top:12px}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd)}
+.msg{background:#313338;border-radius:8px;padding:14px 16px;font-size:14px;line-height:1.5}
+.msg .u{font-weight:600;margin-right:6px}
+.role-tag{font-size:11px;font-weight:600;background:#2b2d31;padding:2px 6px;border-radius:6px}
+.embedprev{background:#2b2d31;border-radius:8px;padding:12px 14px;margin-top:12px;border-left:4px solid var(--b);max-width:480px}
+.embedprev .et{font-weight:700;font-size:14px}.embedprev .ed{font-size:13px;color:#dbdee1;margin-top:4px}
+.kv{display:flex;justify-content:space-between;font-size:12px;padding:7px 0;border-bottom:1px solid var(--bd)}
+.kv b{font-variant-numeric:tabular-nums}
+.pass{color:#3ba55d;font-weight:700}.fail{color:#ed4245;font-weight:700}
+.hint{font-size:12px;color:var(--m);line-height:1.6;margin-top:12px}
+code{background:var(--p2);border:1px solid var(--bd);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Color Lab</span><a href="/embeds/" style="margin-left:auto;font-size:12px;color:var(--m)">Open in Embed Lab →</a></div>
+<div class="wrap">
+  <div class="card">
+    <h3>🎨 Pick a color</h3>
+    <input type="color" id="picker" value="#5865F2" />
+    <label>Hex</label>
+    <div class="row"><input class="inp" id="hex" value="#5865F2" spellcheck="false" /><button class="btn ghost" id="copy" style="width:auto;margin-top:0">Copy</button></div>
+    <label>Discord presets</label>
+    <div class="swatches" id="sw"></div>
+    <button class="btn ghost" id="random">🎲 Randomize</button>
+    <div class="hint">Click any <code>#hex</code> value to copy. Pairs with Embed Lab — paste the hex as the embed color.</div>
+  </div>
+  <div>
+    <div class="card" style="margin-bottom:16px">
+      <h3>Live Discord preview</h3>
+      <div class="msg"><span class="u" id="pv-user">ModBot</span><span class="role-tag">BOT</span><div style="margin-top:2px">Hey — this role &amp; embed use <b id="pv-hex">#5865F2</b></div></div>
+      <div class="embedprev" id="pv-embed"><div class="et">Embed title</div><div class="ed">Embed side-bar, role name and button accents render in your color.</div></div>
+    </div>
+    <div class="card">
+      <h3>Contrast (WCAG)</h3>
+      <div class="kv"><span>On Discord dark chat <code>#313338</code></span><b id="c-dark">–</b></div>
+      <div class="kv"><span>On Discord light <code>#ffffff</code></span><b id="c-light">–</b></div>
+      <div class="kv"><span>White text on your color</span><b id="c-text">–</b></div>
+      <div class="kv" style="border:0"><span>Decimal (for bots)</span><b><code id="dec">–</code></b></div>
+      <div class="hint">Aim for ≥ 4.5:1 for body text. Role colors below ~3:1 on dark chat are hard to read — lighten them.</div>
+    </div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const presets = ['#5865F2','#57F287','#FEE75C','#FEBE3B','#ED4245','#EB459E','#9B59B6','#00AFF4','#00D166','#8A8A90','#1ABC9C','#E74C3C'];
+function norm(h){ h = h.trim(); if(!h.startsWith('#')) h = '#' + h; if(/^#[0-9a-fA-F]{3}$/.test(h)) h = '#' + h.slice(1).split('').map(c=>c+c).join(''); return /^#[0-9a-fA-F]{6}$/.test(h) ? h.toUpperCase() : null; }
+function lum(hex){ const c = [0,2,4].map(i => { const v = parseInt(hex.slice(1+i,3+i),16)/255; return v <= .03928 ? v/12.92 : Math.pow((v+.055)/1.055,2.4); }); return .2126*c[0]+.7152*c[1]+.0722*c[2]; }
+function ratio(a,b){ const l1=lum(a),l2=lum(b); return ((Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05)); }
+function fmt(r){ const el = r >= 4.5 ? 'pass' : (r >= 3 ? '' : 'fail'); return '<span class="'+el+'">'+r.toFixed(2)+':1</span>'; }
+function apply(hex){
+  hex = norm(hex) || '#5865F2';
+  $('picker').value = hex; $('hex').value = hex;
+  $('pv-user').style.color = hex; $('pv-hex').textContent = hex;
+  $('pv-embed').style.borderLeftColor = hex;
+  $('c-dark').innerHTML = fmt(ratio(hex,'#313338'));
+  $('c-light').innerHTML = fmt(ratio(hex,'#FFFFFF'));
+  $('c-text').innerHTML = fmt(ratio('#FFFFFF',hex));
+  $('dec').textContent = parseInt(hex.slice(1),16);
+}
+$('picker').addEventListener('input', e => apply(e.target.value));
+$('hex').addEventListener('input', e => { const n = norm(e.target.value); if(n) apply(n); });
+$('copy').onclick = () => { navigator.clipboard.writeText($('hex').value); $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy',1200); };
+document.querySelectorAll('code').forEach(c => c.onclick = () => navigator.clipboard.writeText(c.textContent));
+$('random').onclick = () => apply('#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'));
+$('sw').innerHTML = presets.map(p => '<div class="sw" data-c="'+p+'" style="background:'+p+'" title="'+p+'"></div>').join('');
+document.querySelectorAll('.sw').forEach(s => s.onclick = () => apply(s.dataset.c));
+apply('#5865F2');
+</script>
+</body>
+</html>

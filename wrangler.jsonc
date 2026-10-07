@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "powercordkit",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/hooks/*"]
+  },
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
+  "vars": {
+    "ENVIRONMENT": "personal",
+    "PERSONAL_DOMAIN": "powercordkit.emjay.fyi",
+    "COMMUNITY_DOMAIN": "mod.tep.one",
+    "DEFAULT_SERVER": "general"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "powercordkit-mail",
+      "database_id": "5ae44a04-6fe3-4f3a-812b-4a34c0443d9e",
+      "migrations_dir": "./migrations"
+    }
+  ]
+  // Custom domain: add via dashboard (Workers > powercordkit > Settings > Domains)
+  // once emjay.fyi zone is in this account. Then restore:
+  // "routes": [{ "pattern": "powercordkit.emjay.fyi/*", "zone_name": "emjay.fyi" }]
+}

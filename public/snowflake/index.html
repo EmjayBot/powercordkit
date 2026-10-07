@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Snowflake Lab — PowerCordKit</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.top{height:54px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--p)}
+.top a{color:var(--t);text-decoration:none;font-weight:700;font-size:15px}.top img{width:28px;height:28px;border-radius:7px}
+.wrap{max-width:860px;margin:0 auto;padding:28px 20px 80px}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h3{margin:0 0 12px 0;font-size:14px}
+.inp{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;color:var(--t);font-size:13px;outline:none;width:100%;font-family:'JetBrains Mono',monospace}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.row{display:flex;gap:8px}.row .inp{flex:1}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:8px 0;border-bottom:1px solid var(--bd)}
+.kv:last-child{border:0}
+.kv b{font-family:'JetBrains Mono',monospace;font-weight:600}
+.kv span{color:var(--m)}
+.bits{font-family:'JetBrains Mono',monospace;font-size:10.5px;word-break:break-all;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:10px;margin-top:10px;line-height:1.7}
+.bt{color:#5865F2}.bw{color:#57F287}.bp{color:#FEBE3B}.bi{color:#8a8a90}
+.hint{font-size:12px;color:var(--m);line-height:1.6;margin-top:10px}
+.err{color:#ed4245;font-size:13px;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Snowflake Lab</span></div>
+<div class="wrap">
+  <div class="card"><h3>Decode a Discord ID</h3>
+    <div class="row"><input class="inp" id="sf" placeholder="e.g. 112233445566778899" inputmode="numeric" /><button class="btn" id="go">Decode</button></div>
+    <div class="hint">Right-click any user, message, channel or server → <b>Copy ID</b> (enable Developer Mode first). Paste it here to reveal when it was created and which worker made it.</div>
+  </div>
+  <div class="card"><h3>Result</h3><div id="out"><span style="color:var(--m);font-size:12px">Nothing decoded yet.</span></div></div>
+  <div class="card"><h3>How snowflakes work</h3>
+    <div class="bits"><span class="bt">63…22 timestamp ms since 2015-01-01</span> <span class="bw">21…17 worker id</span> <span class="bp">16…12 process id</span> <span class="bi">11…0 increment</span></div>
+    <div class="hint">Discord epoch = 1420070400000 (2015-01-01T00:00:00Z). Created-at = (id >> 22) + epoch. IDs sort by creation time, so a bigger ID is always newer.</div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+function decode(){
+  const raw = $('sf').value.trim();
+  let id;
+  try { id = BigInt(raw); } catch { return err(); }
+  if(id < 0n || raw.length < 15 || raw.length > 20) return err();
+  const ts = Number(id >> 22n) + 1420070400000;
+  const d = new Date(ts);
+  if(isNaN(d.getTime())) return err();
+  const worker = (id >> 17n) & 31n, proc = (id >> 12n) & 31n, inc = id & 4095n;
+  const bin = id.toString(2).padStart(64,'0');
+  $('out').innerHTML =
+    '<div class="kv"><span>Created (UTC)</span><b>'+d.toISOString()+'</b></div>' +
+    '<div class="kv"><span>Created (local)</span><b>'+d.toLocaleString()+'</b></div>' +
+    '<div class="kv"><span>Unix ms</span><b>'+ts+'</b></div>' +
+    '<div class="kv"><span>Worker ID</span><b>'+worker+'</b></div>' +
+    '<div class="kv"><span>Process ID</span><b>'+proc+'</b></div>' +
+    '<div class="kv"><span>Increment</span><b>'+inc+'</b></div>' +
+    '<div class="kv"><span>Age</span><b>'+age(Date.now()-ts)+'</b></div>' +
+    '<div class="bits"><span class="bi">'+bin.slice(0,1)+'</span> <span class="bt">'+bin.slice(1,43)+'</span> <span class="bw">'+bin.slice(43,48)+'</span> <span class="bp">'+bin.slice(48,53)+'</span> <span class="bi">'+bin.slice(53)+'</span></div>';
+}
+function err(){ $('out').innerHTML = '<div class="err">Invalid snowflake — expected 15–20 digits.</div>'; }
+function age(ms){ const s=Math.floor(ms/1000); if(s<60) return s+'s old'; const m=Math.floor(s/60); if(m<60) return m+'m old'; const h=Math.floor(m/60); if(h<48) return h+'h old'; const d=Math.floor(h/24); if(d<365) return d+'d old'; return Math.floor(d/365)+'y '+ (d%365) +'d old'; }
+$('go').onclick = decode;
+$('sf').addEventListener('keydown', e => { if(e.key === 'Enter') decode(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# Local dev secrets — copy to .dev.vars (gitignored). Never commit real secrets.
+# wrangler secret put DISCOURSE_WEBHOOK_SECRET
+# wrangler secret put DISCORD_WEBHOOK_SECRET
+DISCOURSE_WEBHOOK_SECRET=local-dev-discourse-secret
+DISCORD_WEBHOOK_SECRET=local-dev-discord-secret

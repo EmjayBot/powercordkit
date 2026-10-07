@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Webhook Lab — PowerCordKit</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.top{height:54px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--p)}
+.top a{color:var(--t);text-decoration:none;font-weight:700;font-size:15px}.top img{width:28px;height:28px;border-radius:7px}
+.wrap{max-width:1080px;margin:0 auto;padding:24px 20px 80px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h3{margin:0 0 12px 0;font-size:14px}
+label{font-size:11px;color:var(--m);display:block;margin:10px 0 4px 0}
+.inp,textarea.inp{width:100%;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;color:var(--t);font-size:13px;outline:none;font-family:inherit}
+textarea.inp{resize:vertical;min-height:70px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
+.btnrow{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:11px;overflow:auto;max-height:300px;white-space:pre-wrap;font-family:'JetBrains Mono',monospace}
+.dmsg{background:#313338;border-radius:8px;padding:14px 16px;font-size:14px}
+.dmsg .u{font-weight:600}.dmsg .bot{font-size:10px;background:var(--b);border-radius:4px;padding:2px 5px;margin-left:6px}
+.emb{background:#2b2d31;border-radius:8px;padding:10px 12px;border-left:4px solid var(--b);margin-top:8px;max-width:440px}
+.emb .et{font-weight:700;font-size:13px}.emb .ed{font-size:12.5px;color:#dbdee1;margin-top:3px;white-space:pre-wrap}
+.log{font-size:12px;margin-top:10px;line-height:1.7}
+.log .ok{color:#3ba55d}.log .bad{color:#ed4245}
+.hint{font-size:12px;color:var(--m);line-height:1.6}
+.warn{background:rgba(237,66,69,.08);border:1px solid rgba(237,66,69,.4);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Webhook Lab</span></div>
+<div class="wrap">
+  <div>
+    <div class="warn">⚠️ Webhook URLs are secrets — anyone with the URL can post as your bot. Never commit them, never screenshot them. Use a test channel first.</div>
+    <div class="card"><h3>Target</h3>
+      <label>Webhook URL</label><input class="inp" id="w-url" placeholder="https://discord.com/api/webhooks/…/…" spellcheck="false" style="font-family:'JetBrains Mono',monospace;font-size:11px" />
+      <div class="hint" id="url-check" style="margin-top:6px"></div>
+      <div class="row"><div><label>Username override</label><input class="inp" id="w-name" value="PowerCordKit" maxlength="80" /></div><div><label>Avatar URL (optional)</label><input class="inp" id="w-avatar" placeholder="https://…" /></div></div>
+    </div>
+    <div class="card"><h3>Message</h3>
+      <label>Content (up to 2000 chars)</label><textarea class="inp" id="w-content">Hello from **PowerCordKit** Webhook Lab 🎉</textarea>
+      <div class="row"><div><label>Embed title (optional)</label><input class="inp" id="w-et" placeholder="Embed title" /></div><div><label>Embed color</label><input class="inp" id="w-ec" value="#5865F2" /></div></div>
+      <label>Embed description (optional)</label><textarea class="inp" id="w-ed" style="min-height:48px" placeholder="Embed body…"></textarea>
+    </div>
+  </div>
+  <div>
+    <div class="card"><h3>Preview</h3><div class="dmsg"><span class="u" id="pv-name">PowerCordKit</span><span class="bot">BOT</span><div id="pv-content" style="margin-top:2px"></div><div class="emb" id="pv-emb" style="display:none"><div class="et" id="pv-et"></div><div class="ed" id="pv-ed"></div></div></div></div>
+    <div class="card"><h3>Payload</h3><pre class="out" id="out"></pre>
+      <div class="btnrow"><button class="btn" id="send">Send via Discord</button><button class="btn ghost" id="curl">Copy curl</button><button class="btn ghost" id="mail">📬 Mail for review</button></div>
+      <div class="log" id="log"></div>
+      <div class="hint">Send posts straight to Discord from your browser (Discord allows it). For bot backends, copy the curl instead. URL guard: only <code>discord.com / discordapp.com</code> (+ptb/canary) accepted, no localhost or raw IPs.</div>
+    </div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const ALLOWED = ['discord.com','discordapp.com','ptb.discord.com','canary.discord.com'];
+function urlOk(u){
+  try {
+    const p = new URL(u.trim());
+    if(p.protocol !== 'https:') return 'Only https: allowed';
+    if(!ALLOWED.includes(p.hostname)) return 'Host must be a Discord webhook host';
+    if(!/^\/api\/webhooks\/\d+\/[\w-]+/.test(p.pathname)) return 'Does not look like /api/webhooks/{id}/{token}';
+    if(/localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])/.test(p.hostname + p.pathname)) return 'Private targets blocked';
+    return '';
+  } catch { return 'Invalid URL'; }
+}
+function build(){
+  const p = { username: $('w-name').value.slice(0,80) || undefined, avatar_url: $('w-avatar').value || undefined, content: $('w-content').value.slice(0,2000) || undefined };
+  if($('w-et').value || $('w-ed').value){
+    p.embeds = [{ title: $('w-et').value.slice(0,256) || undefined, description: $('w-ed').value.slice(0,4096) || undefined,
+      color: parseInt(($('w-ec').value.replace('#','') || '5865F2'), 16) }];
+  }
+  return p;
+}
+function render(){
+  const p = build();
+  $('pv-name').textContent = p.username || 'Webhook';
+  $('pv-content').textContent = p.content || '';
+  const hasEmb = p.embeds && (p.embeds[0].title || p.embeds[0].description);
+  $('pv-emb').style.display = hasEmb ? 'block' : 'none';
+  if(hasEmb){ $('pv-et').textContent = p.embeds[0].title || ''; $('pv-ed').textContent = p.embeds[0].description || '';
+    $('pv-emb').style.borderLeftColor = $('w-ec').value; }
+  $('out').textContent = JSON.stringify(p, null, 2);
+  const chk = $('w-url').value.trim() ? urlOk($('w-url').value) : '';
+  $('url-check').innerHTML = !$('w-url').value.trim() ? 'Waiting for a webhook URL…' :
+    (chk === '' ? '<span style="color:#3ba55d">✔ Looks like a valid Discord webhook URL</span>' : '<span style="color:#ed4245">✖ ' + esc(chk) + '</span>');
+}
+document.querySelectorAll('.inp').forEach(el => el.addEventListener('input', render));
+$('send').onclick = async () => {
+  const bad = urlOk($('w-url').value);
+  if($('w-url').value.trim() && bad){ $('log').innerHTML = '<span class="bad">✖ ' + esc(bad) + '</span>'; return; }
+  if(!($('w-url').value.trim())){ $('log').innerHTML = '<span class="bad">✖ Paste a webhook URL first.</span>'; return; }
+  $('log').innerHTML = 'Sending…';
+  try {
+    const r = await fetch($('w-url').value.trim() + '?wait=true', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(build()) });
+    $('log').innerHTML = r.ok ? '<span class="ok">✔ Delivered (HTTP ' + r.status + ') — check the channel.</span>'
+      : '<span class="bad">✖ Discord said HTTP ' + r.status + ' — check the URL/token.</span>';
+  } catch(e){ $('log').innerHTML = '<span class="bad">✖ Network error: ' + esc(e.message) + '</span>'; }
+};
+$('curl').onclick = () => {
+  const cmd = "curl -X POST '" + $('w-url').value.trim() + "' -H 'Content-Type: application/json' -d '" + JSON.stringify(build()).replace(/'/g, "'\\''") + "'";
+  navigator.clipboard.writeText(cmd); $('curl').textContent = 'Copied ✓'; setTimeout(()=>$('curl').textContent='Copy curl',1200);
+};
+$('mail').onclick = async () => {
+  const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ server:'staff', type:'mailed', title:'Webhook draft for review: ' + ($('w-name').value || 'webhook'), content: $('out').textContent.slice(0,8000), author:'you', by:'webhook-lab', src:'discord' }) });
+  alert(r.ok ? 'Mailed to mod inbox ✓' : 'Mail API offline — run wrangler dev');
+};
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Markdown Lab — PowerCordKit</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.top{height:54px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--p)}
+.top a{color:var(--t);text-decoration:none;font-weight:700;font-size:15px}.top img{width:28px;height:28px;border-radius:7px}
+.wrap{max-width:1200px;margin:0 auto;padding:24px 20px 80px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px}
+.card h3{margin:0 0 12px 0;font-size:14px}
+textarea{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:10px;color:var(--t);font-size:13px;font-family:'JetBrains Mono',monospace;width:100%;min-height:340px;resize:vertical;outline:none;line-height:1.6}
+.dmsg{background:#313338;border-radius:8px;padding:14px 16px;min-height:340px}
+.dmsg,.dmsg *{font-family:'gg sans',Inter,system-ui}
+.dmsg code{background:#2b2d31;padding:1px 5px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:12.5px}
+.dmsg pre{background:#2b2d31;border:1px solid #1e1f22;border-radius:8px;padding:12px;overflow:auto}
+.dmsg pre code{background:none;padding:0}
+.dmsg blockquote{border-left:3px solid #4e5058;padding-left:10px;margin:6px 0;color:#dbdee1}
+.dmsg h1{font-size:20px;margin:8px 0}.dmsg h2{font-size:17px;margin:8px 0}.dmsg h3{font-size:15px;margin:8px 0}
+.dmsg a{color:#00a8fc;text-decoration:none}
+.dmsg ul{margin:6px 0;padding-left:20px}
+.dmsg .mention{background:rgba(88,101,242,.3);color:#c9cdfb;border-radius:3px;padding:0 3px;font-weight:500}
+.dmsg .spoiler{background:#1e1f22;color:#1e1f22;border-radius:3px;padding:0 4px;cursor:pointer}
+.dmsg .spoiler.revealed{color:#dbdee1}
+.dmsg ol{margin:6px 0;padding-left:22px}
+.toolbar{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+.tbtn{padding:6px 9px;border-radius:6px;border:1px solid var(--bd);background:var(--p2);color:var(--t);font-size:12px;cursor:pointer;font-weight:600}
+.tbtn:hover{border-color:var(--b)}
+.stats{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--m);margin-top:8px}
+.stats .over{color:#ed4245;font-weight:700}
+.chatmock{display:flex;gap:10px;margin-top:10px}
+.chatmock .avt{width:32px;height:32px;border-radius:50%;background:var(--b);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
+.cheats{font-size:11.5px;color:var(--m);line-height:2;margin-top:12px}
+.cheats code{background:var(--p2);border:1px solid var(--bd);border-radius:5px;padding:1px 5px;font-family:'JetBrains Mono',monospace}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Markdown Lab</span><button class="btn" id="copy" style="margin-left:auto">Copy source</button></div>
+<div class="wrap">
+  <div class="card"><h3>Discord markdown source — full editor</h3>
+  <div class="toolbar">
+    <button class="tbtn" data-w0="**" data-w1="**"><b>B</b></button>
+    <button class="tbtn" data-w0="*" data-w1="*"><i>I</i></button>
+    <button class="tbtn" data-w0="***" data-w1="***">B+I</button>
+    <button class="tbtn" data-w0="__" data-w1="__"><u>U</u></button>
+    <button class="tbtn" data-w0="__**" data-w1="**__">U+B</button>
+    <button class="tbtn" data-w0="~~" data-w1="~~"><s>S</s></button>
+    <button class="tbtn" data-w0="`" data-w1="`">code</button>
+    <button class="tbtn" data-w0="```&#10;" data-w1="&#10;```">```</button>
+    <button class="tbtn" data-w0="> " data-w1="">Quote</button>
+    <button class="tbtn" data-w0=">>> " data-w1="">>>></button>
+    <button class="tbtn" data-w0="-# " data-w1="">-#</button>
+    <button class="tbtn" data-w0="- " data-w1="">• List</button>
+    <button class="tbtn" data-w0="1. " data-w1="">1. List</button>
+    <button class="tbtn" data-w0="[" data-w1="](https://)">Link</button>
+    <button class="tbtn" data-w0="||" data-w1="||">Spoiler</button>
+    <button class="tbtn" data-w0="&lt;t:" data-w1=":F&gt;">Time</button>
+    <button class="tbtn" id="tb-clear" style="margin-left:auto">Clear</button>
+  </div>
+  <textarea id="src"></textarea>
+  <div class="stats"><span><b id="chars">0</b> chars • Discord limit 2000 • <span id="msgs"></span></span><span id="limit-warn"></span></div>
+  </div>
+  <div><div class="card"><h3>Discord preview</h3><div class="dmsg" id="out"></div>
+  <div style="display:flex;gap:8px;margin-top:10px"><button class="btn ghost" id="chat">Preview as Discord message</button></div>
+  <div id="chat-out"></div></div>
+  <div class="card cheats"><b style="color:var(--t)">Cheat sheet</b><br/>
+  <code>**bold**</code> <code>*italic*</code> <code>***bold italic***</code> <code>__underline__</code> <code>__**underline bold**</code> <code>~~strike~~</code> <code>||spoiler||</code><br/>
+  <code>`code`</code> <code>```lang … ```</code> <code>```ansi colors```</code> <code>&gt; quote</code> <code>&gt;&gt;&gt; multi-quote</code> <code>-# subtext</code><br/>
+  <code>- list</code> <code>1. ordered</code> <code># h1</code> <code>[text](url)</code> <code>&lt;url&gt;</code> no-embed<br/>
+  <code>&lt;t:123:R&gt;</code> timestamps <code>&lt;@id&gt;</code> <code>&lt;@&amp;role&gt;</code> <code>&lt;#channel&gt;</code> <code>@everyone</code> <code>@here</code> • bare URLs auto-link</div></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const DEFAULT_MD = '**Bold** *italic* ***bold italic*** __underline__ __**underline bold**__ ~~strike~~ ||spoiler||\n`inline code`\n\n```js\nconsole.log("PowerCordKit")\n```\n\n```ansi\n\x1B[0;31mRed \x1B[0;32mGreen \x1B[0;34mBlue \x1B[0;33mYellow \x1B[1;37mBold White\x1B[0m\n```\n\n> A wise mod once said…\n>>> Everything below is quoted,\neven without markers.\n-# Small gray subtext line\n- List item one\n- List item two\n1. Ordered step one\n2. Ordered step two\n# Big heading\n[Example](https://example.com) <https://example.com> https://example.com\n<@123456789> <@&987654321> <#112233445> @everyone\n<t:1700000000:R>';
+if(!$('src').value) $('src').value = DEFAULT_MD;
+function render(){
+  let lines = $('src').value.split('\n');
+  let html = '', inCode = false, codeLang = '', codeBuf = [], inList = false;
+  const flushList = () => { if(inList){ html += '</ul>'; inList = false; } };
+  const inline = (t) => {
+    t = esc(t);
+    // Stash `code` spans so link/mention transforms never touch code content.
+    const codes = [];
+    t = t.replace(/`([^`\n]+?)`/g, (_m, g) => { codes.push(g); return '%%CODE' + (codes.length - 1) + '%%'; });
+    t = t.replace(/&lt;t:(\d+):([tTdDfFR])&gt;/g, '<code>&lt;t:$1:$2&gt;</code>');
+    t = t.replace(/&lt;@&amp;(\d+)&gt;|&lt;@&(\d+)&gt;/g, '<span class="mention">@role</span>');
+    t = t.replace(/&lt;@!?(\d+)&gt;/g, '<span class="mention">@user</span>');
+    t = t.replace(/&lt;#(\d+)&gt;/g, '<span class="mention">#$1</span>');
+    t = t.replace(/@everyone|@here/g, '<span class="mention">$&</span>');
+    // Nested combos first (longest markers win), then simple styles.
+    t = t.replace(/__\*\*\*(.+?)\*\*\*__/g, '<b><i><u>$1</u></i></b>')
+         .replace(/__\*\*(.+?)\*\*__/g, '<b><u>$1</u></b>')
+         .replace(/\*\*__(.+?)__\*\*/g, '<b><u>$1</u></b>')
+         .replace(/__\*(.+?)\*__/g, '<i><u>$1</u></i>')
+         .replace(/\*\*\*(.+?)\*\*\*/g, '<b><i>$1</i></b>')
+         .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>')
+         .replace(/__(.+?)__/g, '<u>$1</u>').replace(/~~(.+?)~~/g, '<s>$1</s>')
+         .replace(/\|\|(.+?)\|\|/g, '<span class="spoiler" onclick="this.classList.toggle(\'revealed\')">$1</span>');
+    t = t.replace(/\[([^\]]+?)\]\((https?:[^)\s]+?)\)/g, '<a href="$2">$1</a>');
+    // <url> = no-embed link; bare https:// URLs auto-link (not inside quotes).
+    t = t.replace(/&lt;(https?:\/\/[^&\s]+)&gt;/g, '<code>$1</code>');
+    t = t.replace(/(^|[\s(])https?:\/\/[^\s<]+/g, (m) => {
+      const pre = m.match(/^[(\s]/) ? m[0] : '';
+      const url = m.slice(pre.length).replace(/[.,!?;:]+$/, '');
+      const trail = m.slice(pre.length + url.length);
+      return pre + '<a href="' + url + '">' + url + '</a>' + trail;
+    });
+    t = t.replace(/%%CODE(\d+)%%/g, (_m, i) => '<code>' + codes[+i] + '</code>');
+    return t;
+  };
+  let inOl = false;
+  const flushOl = () => { if(inOl){ html += '</ol>'; inOl = false; } };
+  for(let li = 0; li < lines.length; li++){
+    const line = lines[li];
+    const fence = line.match(/^```(\w*)\s*$/);
+    if(fence){ if(inCode){ html += codeBlock(codeLang, codeBuf.join('\n')); codeBuf = []; inCode = false; } else { flushList(); flushOl(); inCode = true; codeLang = (fence[1] || '').toLowerCase(); } continue; }
+    if(inCode){ codeBuf.push(line); continue; }
+    let m;
+    if(line.startsWith('>>>')){ flushList(); flushOl(); const rest = [line.slice(3).trimStart()].concat(lines.slice(li + 1)); html += '<blockquote>' + rest.map(l => inline(l)).join('<br>') + '</blockquote>'; break; }
+    else if((m = line.match(/^-#\s+(.*)/))){ flushList(); flushOl(); html += '<div style="font-size:13px;color:#b5bac1">' + inline(m[1]) + '</div>'; }
+    else if((m = line.match(/^(#{1,3})\s+(.*)/))){ flushList(); flushOl(); html += '<h' + m[1].length + '>' + inline(m[2]) + '</h' + m[1].length + '>'; }
+    else if(line.startsWith('> ')){ flushList(); flushOl(); html += '<blockquote>' + inline(line.slice(2)) + '</blockquote>'; }
+    else if((m = line.match(/^[-*]\s+(.*)/))){ flushOl(); if(!inList){ html += '<ul>'; inList = true; } html += '<li>' + inline(m[1]) + '</li>'; }
+    else if((m = line.match(/^\d+[.)]\s+(.*)/))){ flushList(); if(!inOl){ html += '<ol>'; inOl = true; } html += '<li>' + inline(m[1]) + '</li>'; }
+    else if(line.trim() === ''){ flushList(); flushOl(); }
+    else { flushList(); flushOl(); html += '<div>' + inline(line) + '</div>'; }
+  }
+  if(inCode) html += codeBlock(codeLang, codeBuf.join('\n'));
+  flushList(); flushOl();
+  $('out').innerHTML = html || '<span style="color:#888">Empty</span>';
+  const n = $('src').value.length;
+  $('chars').textContent = n;
+  $('msgs').textContent = n === 0 ? 'empty' : Math.ceil(n / 2000) + (Math.ceil(n / 2000) === 1 ? ' message' : ' messages');
+  $('limit-warn').innerHTML = n > 2000 ? '<span class="over">over 2000 — split it</span>' : '';
+}
+function codeBlock(lang, src){
+  if(lang === 'ansi') return '<pre><code>' + ansi(src) + '</code></pre>';
+  return '<pre><code>' + esc(src) + '</code></pre>';
+}
+// ANSI escape renderer (Discord ```ansi blocks): \x1B[FG;BG;style m
+function ansi(src){
+  const FG = {30:'#4E5058',31:'#ED4245',32:'#57F287',33:'#FEE75C',34:'#5865F2',35:'#EB459E',36:'#00D9FF',37:'#F8F9F9',90:'#6D6F78',91:'#FF7878',92:'#8AFF8A',93:'#FFFF8A',94:'#8A8AFF',95:'#FF8AFF',96:'#8AFFFF',97:'#FFFFFF'};
+  const BG = {40:'#4E5058',41:'#ED4245',42:'#57F287',43:'#FEE75C',44:'#5865F2',45:'#EB459E',46:'#00D9FF',47:'#F8F9F9'};
+  let out = '', fg, bg, b = false, u = false;
+  for(const part of esc(src).split(/(\u001b\[[0-9;]*m)/g)){
+    const m = part.match(/\u001b\[([0-9;]*)m/);
+    if(m){
+      const codes = m[1].split(';').filter(Boolean);
+      if(codes.length === 0 || codes.includes('0')){ fg = bg = undefined; b = u = false; }
+      for(const code of codes){
+        if(code === '1') b = true;
+        else if(code === '4') u = true;
+        else if(FG[code]) fg = FG[code];
+        else if(BG[code]) bg = BG[code];
+      }
+    } else if(part){
+      let st = '';
+      if(fg) st += 'color:' + fg + ';';
+      if(bg) st += 'background-color:' + bg + ';';
+      if(b) st += 'font-weight:700;';
+      if(u) st += 'text-decoration:underline;';
+      out += st ? '<span style="' + st + '">' + part + '</span>' : part;
+    }
+  }
+  return out;
+}
+$('src').addEventListener('input', render);
+$('copy').onclick = () => { navigator.clipboard.writeText($('src').value); $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy source',1200); };
+document.querySelectorAll('.tbtn[data-w0]').forEach(b => b.onclick = () => {
+  const ta = $('src'), s = ta.selectionStart, e = ta.selectionEnd;
+  const sel = ta.value.substring(s, e);
+  ta.value = ta.value.substring(0, s) + b.dataset.w0 + sel + b.dataset.w1 + ta.value.substring(e);
+  ta.focus();
+  ta.selectionStart = s + b.dataset.w0.length;
+  ta.selectionEnd = s + b.dataset.w0.length + sel.length;
+  render();
+});
+$('tb-clear').onclick = () => { $('src').value = ''; $('chat-out').innerHTML = ''; render(); };
+$('chat').onclick = () => {
+  $('chat-out').innerHTML = '<div class="dmsg" style="min-height:0;margin-top:10px"><div class="chatmock"><div class="avt">Y</div><div><div style="font-size:13px"><b>you</b> <span style="font-size:11px;color:#949ba4">Today at ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) + '</span></div><div style="margin-top:2px">' + $('out').innerHTML + '</div></div></div></div>';
+};
+render();
+</script>
+</body>
+</html>

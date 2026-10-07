@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Timestamp Lab — PowerCordKit</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.top{height:54px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--p)}
+.top a{color:var(--t);text-decoration:none;font-weight:700;font-size:15px}.top img{width:28px;height:28px;border-radius:7px}
+.wrap{max-width:860px;margin:0 auto;padding:28px 20px 80px}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h3{margin:0 0 12px 0;font-size:14px}
+.inp{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;color:var(--t);font-size:13px;outline:none;width:100%}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:140px}
+.trow{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 12px;margin-top:8px;font-size:12px}
+.trow code{font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer}
+.trow code:hover{color:var(--b)}
+.prev{color:var(--m)}
+.hint{font-size:12px;color:var(--m);line-height:1.6;margin-top:10px}
+.pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.pill{font-size:11px;background:var(--p2);border:1px solid var(--bd);border-radius:999px;padding:5px 11px;cursor:pointer}
+.pill:hover{border-color:var(--b)}
+</style>
+</head>
+<body>
+<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Timestamp Lab</span></div>
+<div class="wrap">
+  <div class="card"><h3>Pick a moment</h3>
+    <div class="row"><input class="inp" type="datetime-local" id="dt" /><button class="btn ghost" id="now">Use now</button></div>
+    <div class="pills"><span class="pill" data-min="60">in 1 hour</span><span class="pill" data-min="1440">in 24 hours</span><span class="pill" data-min="10080">in 7 days</span><span class="pill" data-min="-60">1 hour ago</span></div>
+  </div>
+  <div class="card"><h3>Discord codes <span style="color:var(--m);font-weight:400">— click to copy</span></h3><div id="out"></div>
+    <div class="hint">Paste any <code>&lt;t:…&gt;</code> code into Discord and every user sees it in their own timezone. <code>R</code> = relative ("in 2 hours"), <code>F</code> = full date, <code>D</code> = short date, <code>T</code> = time.</div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const formats = [['F','Full date'],['D','Short date'],['T','Time'],['R','Relative'],['f','Full short'],['d','Date numbers'],['t','Time short']];
+function render(){
+  const v = $('dt').value;
+  if(!v){ $('out').innerHTML = '<span style="color:var(--m);font-size:12px">Pick a date above.</span>'; return; }
+  const s = Math.floor(new Date(v).getTime() / 1000);
+  if(isNaN(s)){ $('out').innerHTML = '<span style="color:var(--m);font-size:12px">Invalid date.</span>'; return; }
+  const now = Math.floor(Date.now() / 1000);
+  const rel = s - now;
+  const relTxt = rel >= 0 ? 'in ' + fmtDur(rel) : fmtDur(-rel) + ' ago';
+  $('out').innerHTML = '<div class="trow"><span>Unix epoch</span><code data-c="'+s+'">'+s+'</code></div>' +
+    formats.map(([f,label]) => '<div class="trow"><span>'+label+' <span class="prev">— '+(f==='R'?relTxt:'renders in reader timezone')+'</span></span><code data-c="&lt;t:'+s+':'+f+'&gt;">&lt;t:'+s+':'+f+'&gt;</code></div>').join('');
+  document.querySelectorAll('#out code').forEach(c => c.onclick = () => { navigator.clipboard.writeText(c.dataset.c); c.textContent = 'copied ✓'; setTimeout(render, 900); });
+}
+function fmtDur(s){ if(s<60) return s+'s'; if(s<3600) return Math.floor(s/60)+'m'; if(s<86400) return Math.floor(s/3600)+'h'; return Math.floor(s/86400)+'d'; }
+function setNow(){ const d = new Date(); d.setSeconds(0,0); $('dt').value = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16); render(); }
+$('dt').addEventListener('input', render);
+$('now').onclick = setNow;
+document.querySelectorAll('.pill').forEach(p => p.onclick = () => { const d = new Date(Date.now() + (+p.dataset.min)*60000); d.setSeconds(0,0); $('dt').value = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16); render(); });
+setNow();
+</script>
+</body>
+</html>

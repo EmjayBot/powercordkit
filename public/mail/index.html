@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mail Overview — PowerCordKit</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90;--red:#ed4245;--green:#3ba55d;--yel:#fee75c}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.top{height:54px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--p);position:sticky;top:0;z-index:10}
+.top a.logo{color:var(--t);text-decoration:none;font-weight:700;font-size:15px}.top img{width:28px;height:28px;border-radius:7px;vertical-align:-7px}
+.top .sp{margin-left:auto;display:flex;gap:8px;align-items:center}
+.pill{font-size:11px;font-weight:700;background:var(--p2);border:1px solid var(--bd);border-radius:999px;padding:5px 11px;color:var(--m)}
+.pill.live{color:var(--green);border-color:rgba(59,165,93,.5)}.pill.off{color:var(--red);border-color:rgba(237,66,69,.5)}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px}
+h1{font-size:24px;margin:0;letter-spacing:-.02em}
+.sub{color:var(--m);font-size:13px;margin:6px 0 20px 0}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+@media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:16px;text-decoration:none;color:var(--t);display:block}
+.stat:hover{border-color:var(--b)}
+.stat .n{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.stat .l{font-size:12px;color:var(--m);margin-top:2px}
+.stat .go{font-size:11px;color:var(--b);font-weight:700;margin-top:8px;display:block}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+@media(max-width:760px){.tiles{grid-template-columns:1fr}}
+.tile{background:linear-gradient(180deg,var(--p2),var(--p));border:1px solid var(--bd);border-radius:14px;padding:18px;text-decoration:none;color:var(--t);display:block}
+.tile:hover{border-color:var(--b)}
+.tile h3{margin:0 0 6px 0;font-size:15px}
+.tile p{margin:0;color:var(--m);font-size:12.5px;line-height:1.5}
+.tile .go{margin-top:12px;display:inline-block;background:var(--b);color:#fff;font-size:12px;font-weight:700;border-radius:8px;padding:8px 12px}
+.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:900px){.cols{grid-template-columns:1fr}}
+.col{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:14px}
+.col h4{margin:0 0 10px 0;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+.col h4 a{color:var(--b);text-decoration:none;font-size:11px}
+.ri{padding:9px 10px;border:1px solid var(--bd);border-radius:9px;margin-bottom:8px;background:var(--p2);font-size:12px}
+.ri:last-child{margin-bottom:0}
+.ri .t{font-weight:600;margin-bottom:2px}
+.ri .m{color:var(--m);font-size:10.5px}
+.empty{color:var(--m);font-size:12px;padding:8px 0}
+.foot{margin-top:24px;color:var(--m);font-size:12px;line-height:1.7}
+.foot a{color:var(--b);text-decoration:none}
+code{background:var(--p2);border:1px solid var(--bd);border-radius:6px;padding:2px 6px;font-size:11px}
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="logo" href="/"><img src="/assets/powercordkit_logo.png" alt="" /> PowerCordKit</a>
+  <span style="color:var(--m)">/ Mail overview</span>
+  <div class="sp"><span class="pill" id="env">…</span><span class="pill off" id="api">connecting…</span></div>
+</div>
+<div class="wrap">
+  <h1>📬 Mail overview</h1>
+  <div class="sub">Every queue at a glance — Discord servers + forum in one tap. <span id="host"></span></div>
+
+  <div class="stats">
+    <a class="stat" href="/mail/inbox/"><div class="n" id="s-open">–</div><div class="l">Open items</div><span class="go">Open inbox →</span></a>
+    <a class="stat" href="/tickets/"><div class="n" id="s-tickets">–</div><div class="l">Tickets need triage</div><span class="go">Triage →</span></a>
+    <a class="stat" href="/ideas/"><div class="n" id="s-ideas">–</div><div class="l">Ideas in queue</div><span class="go">Review ideas →</span></a>
+    <a class="stat" href="/mail/inbox/"><div class="n" id="s-unassigned">–</div><div class="l">Unassigned</div><span class="go">Assign →</span></a>
+  </div>
+
+  <div class="tiles">
+    <a class="tile" href="/mail/inbox/"><h3>📥 Unified Inbox</h3><p>Search, filter by server + type, private notes, assign, archive with <code>E</code>. The full mod workflow.</p><span class="go">Open Inbox →</span></a>
+    <a class="tile" href="/tickets/"><h3>🎟️ Ticket Triage</h3><p>One-tap claim + resolve for mod tickets. Auto-captured threads land here.</p><span class="go">Triage tickets →</span></a>
+    <a class="tile" href="/ideas/"><h3>💡 Idea Capture</h3><p>Capture, discuss and promote ideas to the roadmap.</p><span class="go">Review ideas →</span></a>
+  </div>
+
+  <div class="cols">
+    <div class="col"><h4>🎟️ Latest tickets <a href="/tickets/">all →</a></h4><div id="c-tickets"></div></div>
+    <div class="col"><h4>💡 Latest ideas <a href="/ideas/">all →</a></h4><div id="c-ideas"></div></div>
+    <div class="col"><h4>🆕 Fresh arrivals <a href="/mail/inbox/">inbox →</a></h4><div id="c-recent"></div></div>
+  </div>
+
+  <div class="foot">
+    Feeds: Discord context menu → <code>POST /hooks/discord</code> · Discourse webhooks → <code>POST /hooks/discourse</code> · forums via <code>POST /hooks/:name</code> (<code>nodebb</code>, <code>flarum</code>, <code>lemmy</code>, <code>custom</code>)<br/>
+    <a href="/">← Back to all PowerCordKit tools</a> · <a href="/mail-setup/">How to self-host this inbox</a>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+function row(d){
+  return '<div class="ri"><div class="t">' + esc(d.title) + '</div><div class="m">' + esc(d.server) + ' • ' + esc(d.author) + ' • ' + esc(d.assigned || 'unassigned') + '</div></div>';
+}
+function col(el, list, empty){
+  $(el).innerHTML = list.length ? list.slice(0,4).map(row).join('') : '<div class="empty">' + empty + '</div>';
+}
+async function load(){
+  try {
+    const [h, inbox] = await Promise.all([
+      fetch('/api/health').then(r => r.json()),
+      fetch('/api/inbox').then(r => { if(!r.ok) throw 0; return r.json(); })
+    ]);
+    const items = inbox.items || [];
+    $('api').textContent = 'API live'; $('api').className = 'pill live';
+    $('env').textContent = h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi';
+    $('host').textContent = 'on ' + (h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi');
+    const t = items.filter(i => i.type === 'ticket'), ideas = items.filter(i => i.type === 'idea');
+    $('s-open').textContent = items.length;
+    $('s-tickets').textContent = t.length;
+    $('s-ideas').textContent = ideas.length;
+    $('s-unassigned').textContent = items.filter(i => !i.assigned).length;
+    col('c-tickets', t, 'No open tickets 🎉');
+    col('c-ideas', ideas, 'No ideas yet.');
+    col('c-recent', items, 'Inbox Zero 🎉');
+  } catch {
+    $('api').textContent = 'API offline'; $('api').className = 'pill off';
+    $('env').textContent = 'demo mode';
+    $('s-open').textContent = '6'; $('s-tickets').textContent = '2'; $('s-ideas').textContent = '2'; $('s-unassigned').textContent = '4';
+    col('c-tickets', [{title:'Ticket #128 — spam in #help',server:'staff',author:'mod_bot',assigned:null}], '');
+    col('c-ideas', [{title:'Add slowmode to #general',server:'general',author:'jake',assigned:null}], '');
+    col('c-recent', [{title:'[Discourse] Login loop iOS',server:'discourse',author:'sarah_dev',assigned:'@mod'}], '');
+  }
+}
+load();
+</script>
+</body>
+</html>

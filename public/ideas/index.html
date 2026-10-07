@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Idea Capture — PowerCordKit</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90;--green:#3ba55d}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.top{height:54px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--p)}
+.top a{color:var(--t);text-decoration:none;font-weight:700;font-size:15px}.top img{width:28px;height:28px;border-radius:7px}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px}
+.bar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.inp{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;color:var(--t);font-size:13px;outline:none}
+.search{flex:1;min-width:200px}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.icard{background:var(--p);border:1px solid var(--bd);border-radius:12px;padding:14px;border-left:3px solid var(--b)}
+.meta{font-size:10px;color:var(--m);margin-bottom:6px;display:flex;gap:6px;flex-wrap:wrap}
+.badge{padding:2px 6px;border-radius:999px;background:var(--p2);border:1px solid var(--bd);font-size:9px;font-weight:600}
+.title{font-size:14px;font-weight:600;margin-bottom:4px}
+.body{font-size:12.5px;color:var(--m);white-space:pre-wrap;margin-bottom:6px}
+.notes{font-size:11.5px;color:var(--t);background:var(--p2);border-radius:8px;padding:8px 10px;margin-bottom:10px}
+.notes div{padding:2px 0}
+.actions{display:flex;gap:6px}
+.actions .btn{padding:6px 10px;font-size:11px}
+.status{font-size:12px;color:var(--m);margin-bottom:12px}
+.form{background:var(--p);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:16px;display:none}
+.form.open{display:block}
+.form .inp{width:100%;margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Idea Capture</span><a href="/mail/" style="font-size:12px;color:var(--m)">Overview</a><a href="/mail/inbox/" style="margin-left:auto;font-size:12px;color:var(--m)">Full inbox →</a></div>
+<div class="wrap">
+  <div class="bar"><input class="inp search" id="q" placeholder="Search ideas…" /><button class="btn" id="new">+ New idea</button></div>
+  <div class="form" id="form">
+    <input class="inp" id="f-title" placeholder="Idea title — e.g. Slowmode 10s in #general after 10pm" />
+    <input class="inp" id="f-body" placeholder="Why + how — details for the mods…" />
+    <div style="display:flex;gap:8px"><button class="btn" id="send">Capture idea</button><button class="btn ghost" id="cancel">Cancel</button></div>
+  </div>
+  <div class="status" id="status">Loading…</div>
+  <div class="grid" id="grid"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+let items = [];
+async function load(){
+  const q = $('q').value.trim();
+  try {
+    const r = await fetch('/api/inbox?type=idea' + (q ? '&q=' + encodeURIComponent(q) : ''));
+    if(!r.ok) throw 0;
+    const j = await r.json();
+    items = j.items || [];
+    $('status').textContent = items.length + ' ideas in queue • backed by Mail API';
+  } catch { $('status').textContent = 'API offline — run wrangler dev (or check deployment)'; items = []; }
+  render();
+}
+function render(){
+  $('grid').innerHTML = items.map(d =>
+    '<div class="icard"><div class="meta"><span class="badge">' + esc(d.server) + '</span><span>' + esc(d.author) + ' • ' + esc(d.assigned || 'unassigned') + '</span></div>' +
+    '<div class="title">💡 ' + esc(d.title) + '</div><div class="body">' + esc((d.content || '').slice(0, 220)) + '</div>' +
+    ((d.notes && d.notes.length) ? '<div class="notes">' + d.notes.map(n => '<div><b>' + esc(n.by) + ':</b> ' + esc(n.text) + '</div>').join('') + '</div>' : '') +
+    '<div class="actions"><button class="btn ghost" data-road="' + d.id + '">Promote to roadmap</button><button class="btn ghost" data-drop="' + d.id + '">Drop</button></div></div>').join('')
+    || '<div style="color:var(--m);font-size:13px">No ideas yet — capture the first one above.</div>';
+  document.querySelectorAll('[data-road]').forEach(b => b.onclick = async () => {
+    await fetch('/api/inbox/' + b.dataset.road + '/assign', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ assigned:'@roadmap' }) });
+    load();
+  });
+  document.querySelectorAll('[data-drop]').forEach(b => b.onclick = async () => {
+    await fetch('/api/inbox/' + b.dataset.drop + '/archive', { method:'POST' });
+    load();
+  });
+}
+$('q').oninput = load;
+$('new').onclick = () => $('form').classList.toggle('open');
+$('cancel').onclick = () => $('form').classList.remove('open');
+$('send').onclick = async () => {
+  if(!$('f-title').value.trim()) return alert('Title required');
+  const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+    server:'general', type:'idea', title:$('f-title').value, content:$('f-body').value, author:'you', by:'idea-capture', src:'discord' }) });
+  if(r.ok){ $('f-title').value=''; $('f-body').value=''; $('form').classList.remove('open'); load(); }
+  else alert('Mail API offline');
+};
+load();
+</script>
+</body>
+</html>

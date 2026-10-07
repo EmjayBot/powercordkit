@@ -1,0 +1,37 @@
+{
+  "name": "powercordkit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PowerCordKit — Discord mod tools suite + Unified Mod Inbox (powercordkit.emjay.fyi + mod.tep.one)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:community": "wrangler dev --config wrangler.community.jsonc",
+    "deploy": "wrangler deploy",
+    "deploy:community": "wrangler deploy --config wrangler.community.jsonc",
+    "types": "wrangler types",
+    "types:community": "wrangler types --config wrangler.community.jsonc",
+    "db:create": "wrangler d1 create powercordkit-mail",
+    "db:create:community": "wrangler d1 create powercordkit-mail-community --config wrangler.community.jsonc",
+    "db:migrate:local": "wrangler d1 migrations apply powercordkit-mail --local",
+    "db:migrate:local:community": "wrangler d1 migrations apply powercordkit-mail-community --local --config wrangler.community.jsonc",
+    "db:migrate:remote": "wrangler d1 migrations apply powercordkit-mail --remote",
+    "db:migrate:remote:community": "wrangler d1 migrations apply powercordkit-mail-community --remote --config wrangler.community.jsonc",
+    "secret:community": "wrangler secret bulk --config wrangler.community.jsonc",
+    "build:tools": "node scripts/build-tools.mjs",
+    "preview:tools": "wrangler pages dev dist/tools --port 8792",
+    "deploy:tools": "wrangler pages deploy dist/tools --project-name powercordkit-tools",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.7.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261006.1",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.42.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

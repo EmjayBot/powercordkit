@@ -1,0 +1,43 @@
+# Deploy the static labs (./public) to GitHub Pages.
+# The labs are pure static HTML — everything except Mail's /api + /hooks
+# works on Pages with no backend. Mail shows its offline demo seed there.
+#
+# Setup: repo Settings > Pages > Source: "GitHub Actions".
+# Custom domain (recommended, required for absolute paths like /mail/):
+#   Settings > Pages > Custom domain, e.g. powercordkit.emjay.fyi
+# Without a custom domain this only works on a *user* site
+# (<user>.github.io, served at root) — project subpaths
+# (<user>.github.io/<repo>/) are NOT supported (absolute asset paths).
+name: Deploy labs to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "public/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v4

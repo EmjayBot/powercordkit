@@ -1,0 +1,44 @@
+{
+  // COMMUNITY DEPLOY — separate Cloudflare account (TEP community).
+  // Use with: wrangler <cmd> --config wrangler.community.jsonc
+  // (npm run dev:community / deploy:community already pass --config for you)
+  // Login flow: wrangler logout && wrangler login  (as community account),
+  // then db:create:community, paste database_id below, migrate, secrets, deploy.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "powercordkit-community",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  // Pinned to the TEP community account (via wrangler whoami as webmaster@tep.network).
+  "account_id": "7481a12e1f66bd216d224fb93ff3ec82",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/hooks/*"]
+  },
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
+  "vars": {
+    "ENVIRONMENT": "community",
+    "COMMUNITY_ID": "tep",
+    "PERSONAL_DOMAIN": "powercordkit.emjay.fyi",
+    "COMMUNITY_DOMAIN": "mod.tep.one",
+    "DEFAULT_SERVER": "tep.one"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "powercordkit-mail-community",
+      "database_id": "ef8e3c4e-38db-47bf-8ebb-c34be00d0a67",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  // Custom domain: active — tep.one zone lives in this (community) account.
+  "routes": [{ "pattern": "mod.tep.one/*", "zone_name": "tep.one" }]
+}
