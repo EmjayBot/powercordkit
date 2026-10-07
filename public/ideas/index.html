@@ -48,11 +48,31 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+// Mod-key gate: when the Worker sets MOD_API_KEY, /api/* needs X-Mod-Key.
+// Prompt once per session, keep it out of URLs/storage.
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
+  let r = await fetch(path, Object.assign({}, opts, { headers }));
+  if (r.status === 401) {
+    let needKey = false;
+    try { needKey = (await r.clone().json()).error === 'Mod key required'; } catch (e) {}
+    if (needKey) {
+      const k = prompt('This inbox needs a mod key:');
+      if (k) {
+        sessionStorage.setItem('pck-mod-key', k);
+        headers['X-Mod-Key'] = k;
+        r = await fetch(path, Object.assign({}, opts, { headers }));
+      }
+    }
+  }
+  return r;
+}
 let items = [];
 async function load(){
   const q = $('q').value.trim();
   try {
-    const r = await fetch('/api/inbox?type=idea' + (q ? '&q=' + encodeURIComponent(q) : ''));
+    const r = await api('/api/inbox?type=idea' + (q ? '&q=' + encodeURIComponent(q) : ''));
     if(!r.ok) throw 0;
     const j = await r.json();
     items = j.items || [];
@@ -68,11 +88,11 @@ function render(){
     '<div class="actions"><button class="btn ghost" data-road="' + d.id + '">Promote to roadmap</button><button class="btn ghost" data-drop="' + d.id + '">Drop</button></div></div>').join('')
     || '<div style="color:var(--m);font-size:13px">No ideas yet — capture the first one above.</div>';
   document.querySelectorAll('[data-road]').forEach(b => b.onclick = async () => {
-    await fetch('/api/inbox/' + b.dataset.road + '/assign', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ assigned:'@roadmap' }) });
+    await api('/api/inbox/' + b.dataset.road + '/assign', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ assigned:'@roadmap' }) });
     load();
   });
   document.querySelectorAll('[data-drop]').forEach(b => b.onclick = async () => {
-    await fetch('/api/inbox/' + b.dataset.drop + '/archive', { method:'POST' });
+    await api('/api/inbox/' + b.dataset.drop + '/archive', { method:'POST' });
     load();
   });
 }
@@ -81,7 +101,7 @@ $('new').onclick = () => $('form').classList.toggle('open');
 $('cancel').onclick = () => $('form').classList.remove('open');
 $('send').onclick = async () => {
   if(!$('f-title').value.trim()) return alert('Title required');
-  const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+  const r = await api('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
     server:'general', type:'idea', title:$('f-title').value, content:$('f-body').value, author:'you', by:'idea-capture', src:'discord' }) });
   if(r.ok){ $('f-title').value=''; $('f-body').value=''; $('form').classList.remove('open'); load(); }
   else alert('Mail API offline');

@@ -47,11 +47,31 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+// Mod-key gate: when the Worker sets MOD_API_KEY, /api/* needs X-Mod-Key.
+// Prompt once per session, keep it out of URLs/storage.
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
+  let r = await fetch(path, Object.assign({}, opts, { headers }));
+  if (r.status === 401) {
+    let needKey = false;
+    try { needKey = (await r.clone().json()).error === 'Mod key required'; } catch (e) {}
+    if (needKey) {
+      const k = prompt('This inbox needs a mod key:');
+      if (k) {
+        sessionStorage.setItem('pck-mod-key', k);
+        headers['X-Mod-Key'] = k;
+        r = await fetch(path, Object.assign({}, opts, { headers }));
+      }
+    }
+  }
+  return r;
+}
 let items = [];
 async function load(){
   const q = $('q').value.trim();
   try {
-    const r = await fetch('/api/inbox?type=ticket' + (q ? '&q=' + encodeURIComponent(q) : ''));
+    const r = await api('/api/inbox?type=ticket' + (q ? '&q=' + encodeURIComponent(q) : ''));
     if(!r.ok) throw 0;
     const j = await r.json();
     items = j.items || [];
@@ -66,11 +86,11 @@ function render(){
     '<div class="actions"><button class="btn ghost" data-claim="' + d.id + '">Claim</button><button class="btn ghost" data-resolve="' + d.id + '">Resolve ✓</button><a class="btn ghost" href="/mail/inbox/" style="text-decoration:none">Open in Mail</a></div></div>').join('')
     || '<div style="color:var(--m);font-size:13px">Inbox Zero 🎉 — no open tickets.</div>';
   document.querySelectorAll('[data-claim]').forEach(b => b.onclick = async () => {
-    await fetch('/api/inbox/' + b.dataset.claim + '/assign', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ assigned:'@me' }) });
+    await api('/api/inbox/' + b.dataset.claim + '/assign', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ assigned:'@me' }) });
     load();
   });
   document.querySelectorAll('[data-resolve]').forEach(b => b.onclick = async () => {
-    await fetch('/api/inbox/' + b.dataset.resolve + '/archive', { method:'POST' });
+    await api('/api/inbox/' + b.dataset.resolve + '/archive', { method:'POST' });
     load();
   });
 }
@@ -79,7 +99,7 @@ $('new').onclick = () => $('form').classList.toggle('open');
 $('cancel').onclick = () => $('form').classList.remove('open');
 $('send').onclick = async () => {
   if(!$('f-title').value.trim()) return alert('Title required');
-  const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+  const r = await api('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
     server:'staff', type:'ticket', title:$('f-title').value, content:$('f-body').value, author:'you', by:'ticket-triage', src:'discord' }) });
   if(r.ok){ $('f-title').value=''; $('f-body').value=''; $('form').classList.remove('open'); load(); }
   else alert('Mail API offline');

@@ -12,6 +12,7 @@ type Bindings = {
   FORUM_WEBHOOK_SECRET?: string;
   MAX_PAYLOAD_BYTES?: string;
   DEFAULT_SERVER?: string;
+  MOD_API_KEY?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -64,6 +65,39 @@ async function guardApi(
 
 app.use('/api/*', guardApi);
 app.use('/hooks/*', guardApi);
+
+// Optional mod-team gate for the API (not webhooks): when MOD_API_KEY is set
+// (wrangler secret put MOD_API_KEY), every /api/* route except /api/health
+// requires X-Mod-Key. Unset = open (local dev). Browser UIs prompt once per
+// session and keep the key in sessionStorage (never localStorage, never URL).
+app.use('/api/*', async (c, next) => {
+  if (new URL(c.req.url).pathname === '/api/health') return next();
+  const key = c.env.MOD_API_KEY;
+  if (key) {
+    const given = c.req.header('X-Mod-Key') ?? '';
+    if (!(await timingSafeEqualString(given, key))) {
+      return Response.json({ ok: false, error: 'Mod key required' }, { status: 401, headers: SEC_HEADERS });
+    }
+  }
+  await next();
+});
+
+// Bounded JSON body reader: content-length can be spoofed or absent
+// (chunked), so enforce the cap on the actually-received bytes.
+// Throws the Response to return on oversize/invalid input.
+async function readJson<T>(c: { req: { text(): Promise<string> }; env: Bindings }): Promise<T> {
+  const raw = await c.req.text();
+  if (raw.length > maxPayload(c)) throw new Response('Payload too large', { status: 413, headers: SEC_HEADERS });
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw Response.json({ ok: false, error: 'Invalid JSON' }, { status: 400 });
+  }
+}
+
+function passthroughResponse(err: unknown): Response | null {
+  return err instanceof Response ? err : null;
+}
 
 // Timing-safe string compare for webhook secrets (hex or raw strings).
 async function timingSafeEqualString(a: string, b: string): Promise<boolean> {
@@ -262,8 +296,10 @@ app.get('/api/inbox', async (c) => {
       binds.push(type);
     }
     if (q) {
-      where.push('(lower(title) LIKE ? OR lower(content) LIKE ?)');
-      binds.push(`%${q}%`, `%${q}%`);
+      // Escape LIKE wildcards so a search for "%" can't match everything.
+      const qesc = q.replace(/[\\%_]/g, (m) => '\\' + m);
+      where.push("(lower(title) LIKE ? ESCAPE '\\' OR lower(content) LIKE ? ESCAPE '\\')");
+      binds.push(`%${qesc}%`, `%${qesc}%`);
     }
     const sql =
       `SELECT * FROM inbox_items` +
@@ -292,7 +328,7 @@ app.get('/api/inbox', async (c) => {
 // Create inbox item (manual mail from Discord context menu UI or API).
 app.post('/api/inbox', async (c) => {
   try {
-    const body = await c.req.json<{
+    const body = await readJson<{
       server?: string;
       type?: string;
       tag?: string;
@@ -303,7 +339,7 @@ app.post('/api/inbox', async (c) => {
       src?: string;
       by?: string;
       url?: string;
-    }>();
+    }>(c);
     if (!body.title || body.title.trim().length === 0) return bad('title is required');
     const row: InboxRow = {
       id: newId(),
@@ -334,6 +370,8 @@ app.post('/api/inbox', async (c) => {
     jsonLog('info', 'inbox item created', { id: row.id, server: row.server, type: row.type });
     return c.json({ ok: true, item: { ...row, notes: [] } }, 201);
   } catch (err) {
+    const passthrough = passthroughResponse(err);
+    if (passthrough) return passthrough;
     jsonLog('error', 'inbox create failed', { error: String(err) });
     return bad('Failed to create item', 500);
   }
@@ -342,7 +380,7 @@ app.post('/api/inbox', async (c) => {
 app.post('/api/inbox/:id/notes', async (c) => {
   try {
     const id = c.req.param('id');
-    const body = await c.req.json<{ by?: string; text?: string }>();
+    const body = await readJson<{ by?: string; text?: string }>(c);
     if (!body.text || body.text.trim().length === 0) return bad('text is required');
     const existing = await c.env.DB.prepare(`SELECT id FROM inbox_items WHERE id = ?`)
       .bind(id)
@@ -360,6 +398,8 @@ app.post('/api/inbox/:id/notes', async (c) => {
       .run();
     return c.json({ ok: true, note }, 201);
   } catch (err) {
+    const passthrough = passthroughResponse(err);
+    if (passthrough) return passthrough;
     jsonLog('error', 'add note failed', { error: String(err) });
     return bad('Failed to add note', 500);
   }
@@ -368,12 +408,17 @@ app.post('/api/inbox/:id/notes', async (c) => {
 app.post('/api/inbox/:id/assign', async (c) => {
   try {
     const id = c.req.param('id');
-    const body = await c.req.json<{ assigned?: string }>();
-    await c.env.DB.prepare(`UPDATE inbox_items SET assigned = ? WHERE id = ?`)
+    const body = await readJson<{ assigned?: string }>(c);
+    const r = await c.env.DB.prepare(`UPDATE inbox_items SET assigned = ? WHERE id = ?`)
       .bind((body.assigned ?? null) as string | null, id)
       .run();
+    if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
+      return bad('item not found', 404);
+    }
     return c.json({ ok: true });
   } catch (err) {
+    const passthrough = passthroughResponse(err);
+    if (passthrough) return passthrough;
     jsonLog('error', 'assign failed', { error: String(err) });
     return bad('Failed to assign', 500);
   }
@@ -382,7 +427,10 @@ app.post('/api/inbox/:id/assign', async (c) => {
 app.post('/api/inbox/:id/archive', async (c) => {
   try {
     const id = c.req.param('id');
-    await c.env.DB.prepare(`UPDATE inbox_items SET archived = 1 WHERE id = ?`).bind(id).run();
+    const r = await c.env.DB.prepare(`UPDATE inbox_items SET archived = 1 WHERE id = ?`).bind(id).run();
+    if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
+      return bad('item not found', 404);
+    }
     return c.json({ ok: true });
   } catch (err) {
     jsonLog('error', 'archive failed', { error: String(err) });
@@ -397,7 +445,14 @@ app.post('/hooks/discourse', async (c) => {
   try {
     const secret = c.env.DISCOURSE_WEBHOOK_SECRET;
     const raw = await c.req.text();
-    if (secret) {
+    if (raw.length > maxPayload(c)) return new Response('Payload too large', { status: 413, headers: SEC_HEADERS });
+    // Fail closed: no secret configured (or bad signature) = 401, always.
+    // Local dev gets a secret from .dev.vars, so testing still works.
+    if (!secret) {
+      jsonLog('warn', 'discourse webhook no secret configured');
+      return bad('Webhook not configured', 401);
+    }
+    {
       const sig = c.req.header('X-Discourse-Event-Signature') ?? c.req.header('X-Discourse-Event-Signature-Sha256');
       const ok = await verifyDiscourseSignature(raw, sig ?? null, secret);
       if (!ok) {
@@ -443,6 +498,8 @@ app.post('/hooks/discourse', async (c) => {
     jsonLog('info', 'discourse webhook captured', { id: row.id, category });
     return c.json({ ok: true, id: row.id });
   } catch (err) {
+    const passthrough = passthroughResponse(err);
+    if (passthrough) return passthrough;
     jsonLog('error', 'discourse webhook failed', { error: String(err) });
     return bad('Webhook failed', 500);
   }
@@ -452,9 +509,9 @@ app.post('/hooks/discourse', async (c) => {
 // (or the per-server X-Server-Token — see checkIngestAuth).
 app.post('/hooks/discord', async (c) => {
   try {
-    const body = await c.req.json<{
+    const body = await readJson<{
       server?: string; type?: string; title?: string; content?: string; author?: string; by?: string; url?: string; prio?: string;
-    }>();
+    }>(c);
     if (!body.title) return bad('title is required');
     const row: InboxRow = {
       id: newId(),
@@ -487,6 +544,8 @@ app.post('/hooks/discord', async (c) => {
       .run();
     return c.json({ ok: true, id: row.id }, 201);
   } catch (err) {
+    const passthrough = passthroughResponse(err);
+    if (passthrough) return passthrough;
     jsonLog('error', 'discord webhook failed', { error: String(err) });
     return bad('Webhook failed', 500);
   }
@@ -507,7 +566,7 @@ app.post('/hooks/:name', async (c) => {
       name === 'discourse' ||
       (FORUM_ADAPTERS as readonly string[]).includes(name);
     if (!known) return bad('Unknown adapter: ' + name, 404);
-    const body = await c.req.json<InboxInput>();
+    const body = await readJson<InboxInput>(c);
     const server = ((body.server ?? '') || defaultServer(c.env)).slice(0, 80);
     if (!(await checkIngestAuth(c.env.DB, c.env, c.req.raw.headers, server))) {
       return bad('Bad secret', 401);

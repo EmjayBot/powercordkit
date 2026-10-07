@@ -58,6 +58,26 @@
 let data = [], sel = null, fS = 'all', fT = 'all', serversCache = [];
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Mod-key gate: when the Worker sets MOD_API_KEY, /api/* (except /health)
+// needs X-Mod-Key. Prompt once per session, keep it out of URLs/storage.
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
+  let r = await fetch(path, Object.assign({}, opts, { headers }));
+  if (r.status === 401) {
+    let needKey = false;
+    try { needKey = (await r.clone().json()).error === 'Mod key required'; } catch (e) {}
+    if (needKey) {
+      const k = prompt('This inbox needs a mod key:');
+      if (k) {
+        sessionStorage.setItem('pck-mod-key', k);
+        headers['X-Mod-Key'] = k;
+        r = await fetch(path, Object.assign({}, opts, { headers }));
+      }
+    }
+  }
+  return r;
+}
 
 // Server filters come from the live registry (GET /api/servers) so the inbox
 // scales to any number of servers with zero configuration. Static HTML above
@@ -87,12 +107,12 @@ async function load() {
     if (fT !== 'all') params.set('type', fT);
     const q = $('q').value.trim();
     if (q) params.set('q', q);
-    const r = await fetch('/api/inbox?' + params.toString());
+    const r = await api('/api/inbox?' + params.toString());
     if (!r.ok) throw new Error('API ' + r.status);
     const j = await r.json();
     data = j.items || [];
     $('status').textContent = data.length + ' items • Workers + D1 • E to archive';
-    fetch('/api/servers').then((r) => r.json()).then((sj) => renderServerFilters(sj.servers || [])).catch(() => {});
+    api('/api/servers').then((r) => r.json()).then((sj) => renderServerFilters(sj.servers || [])).catch(() => {});
     const h = await fetch('/api/health').then(x=>x.json()).catch(()=>null);
     if (h) { $('env-pill').textContent = 'Inbox • ' + (h.env || 'personal'); $('api-env').textContent = (h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi') + ' (Workers + D1)'; $('hook-hint').innerHTML = 'Discourse webhook:<br/>POST ' + (h.env === 'community' ? 'https://mod.tep.one/hooks/discourse' : 'https://powercordkit.emjay.fyi/hooks/discourse'); }
   } catch (e) {
@@ -138,7 +158,7 @@ function select(id) {
 }
 
 async function archive(id) {
-  try { await fetch('/api/inbox/' + encodeURIComponent(id) + '/archive', { method: 'POST' }); } catch {}
+  try { await api('/api/inbox/' + encodeURIComponent(id) + '/archive', { method: 'POST' }); } catch {}
   data = data.filter((d) => String(d.id) !== String(id));
   sel = null;
   $('detail').innerHTML = '<div style="padding:60px;text-align:center;color:var(--m)">Archived • Inbox Zero 🎉</div>';
@@ -150,14 +170,14 @@ async function addNote(id) {
   const inp = $('note-inp');
   if (!inp || !inp.value.trim()) return;
   try {
-    await fetch('/api/inbox/' + encodeURIComponent(id) + '/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ by: 'you', text: inp.value }) });
+    await api('/api/inbox/' + encodeURIComponent(id) + '/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ by: 'you', text: inp.value }) });
   } catch {}
   await load();
   if (id) select(id);
 }
 
 async function assign(id, who) {
-  try { await fetch('/api/inbox/' + encodeURIComponent(id) + '/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assigned: who }) }); } catch {}
+  try { await api('/api/inbox/' + encodeURIComponent(id) + '/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assigned: who }) }); } catch {}
   await load();
   select(id);
 }
@@ -165,7 +185,7 @@ async function assign(id, who) {
 async function addItem() {
   const payload = { title: $('m-title').value, content: $('m-content').value, server: $('m-server').value, type: $('m-type').value, src: $('m-server').value === 'discourse' ? 'discourse' : 'discord', by: 'you', author: 'you' };
   try {
-    const r = await fetch('/api/inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const r = await api('/api/inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const j = await r.json();
     closeM(); await load(); if (j.item) select(j.item.id);
   } catch (e) { alert('API offline — start wrangler dev first'); }

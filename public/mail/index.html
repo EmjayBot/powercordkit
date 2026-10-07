@@ -83,6 +83,26 @@ code{background:var(--p2);border:1px solid var(--bd);border-radius:6px;padding:2
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+// Mod-key gate: when the Worker sets MOD_API_KEY, /api/* (except /health)
+// needs X-Mod-Key. Prompt once per session, keep it out of URLs/storage.
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
+  let r = await fetch(path, Object.assign({}, opts, { headers }));
+  if (r.status === 401) {
+    let needKey = false;
+    try { needKey = (await r.clone().json()).error === 'Mod key required'; } catch (e) {}
+    if (needKey) {
+      const k = prompt('This inbox needs a mod key:');
+      if (k) {
+        sessionStorage.setItem('pck-mod-key', k);
+        headers['X-Mod-Key'] = k;
+        r = await fetch(path, Object.assign({}, opts, { headers }));
+      }
+    }
+  }
+  return r;
+}
 function row(d){
   return '<div class="ri"><div class="t">' + esc(d.title) + '</div><div class="m">' + esc(d.server) + ' • ' + esc(d.author) + ' • ' + esc(d.assigned || 'unassigned') + '</div></div>';
 }
@@ -93,7 +113,7 @@ async function load(){
   try {
     const [h, inbox] = await Promise.all([
       fetch('/api/health').then(r => r.json()),
-      fetch('/api/inbox').then(r => { if(!r.ok) throw 0; return r.json(); })
+      api('/api/inbox').then(r => { if(!r.ok) throw 0; return r.json(); })
     ]);
     const items = inbox.items || [];
     $('api').textContent = 'API live'; $('api').className = 'pill live';
