@@ -448,8 +448,8 @@ app.post('/hooks/discourse', async (c) => {
   }
 });
 
-// Discord bot / context-menu webhook: POST /hooks/discord.
-// Auth: global secret (X-Powercordkit-Secret) or per-server X-Server-Token.
+// Discord bot / context-menu webhook: POST /hooks/discord with X-Powercordkit-Secret
+// (or the per-server X-Server-Token — see checkIngestAuth).
 app.post('/hooks/discord', async (c) => {
   try {
     const body = await c.req.json<{

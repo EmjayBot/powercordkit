@@ -41,7 +41,7 @@ td{padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
   <p class="lead">The labs run anywhere static. The <b>Mail inbox</b> (unified triage, tickets, ideas, webhooks) needs one Cloudflare Worker + one D1 database per community. This guide takes you from zero to a live inbox in ~20 minutes. Free-tier friendly.</p>
 
   <div class="toc"><b>Steps</b>
-    <a href="#s0">0. What you get</a><a href="#s1">1. Prerequisites</a><a href="#s2">2. Install &amp; log in</a><a href="#s3">3. Database</a><a href="#s4">4. Secrets</a><a href="#s5">5. Deploy</a><a href="#s6">6. Custom domain</a><a href="#s7">7. Connect Discourse</a><a href="#s8">8. Connect Discord</a><a href="#s9">9. Other forums</a><a href="#s10">10. Operate &amp; troubleshoot</a>
+    <a href="#s0">0. What you get</a><a href="#s1">1. Prerequisites</a><a href="#s2">2. Install &amp; log in</a><a href="#s3">3. Database</a><a href="#s4">4. Secrets</a><a href="#s5">5. Deploy</a><a href="#s6">6. Custom domain</a><a href="#s7">7. Connect Discourse</a><a href="#s8">8. Connect Discord</a><a href="#s9">9. Other forums</a><a href="#servers">★ Multi-server mail</a><a href="#s10">10. Operate &amp; troubleshoot</a>
   </div>
 
   <h2 id="s0"><span class="n">0</span>What you get</h2>
@@ -114,6 +114,11 @@ curl https://&lt;your-worker&gt;.workers.dev/api/health   # expect {"ok":true,"e
   -d '{"server":"my-forum","type":"support","title":"Login broken",
        "content":"(max 4000 chars, truncated server-side)","author":"user1"}'</pre>
   <p>Unknown adapter names → 404. To add a forum permanently, extend <code>FORUM_ADAPTERS</code> in <code>src/index.ts</code> — no other changes needed.</p>
+
+  <h2 id="servers"><span class="n">★</span>How mail works across multiple servers</h2>
+  <p>One inbox watches many Discord servers (guilds) plus forums. The model is deliberately simple:</p>
+  <ul><li><b>Open registry, no pre-registration.</b> Every mailed item carries a <code>server</code> string (e.g. a guild slug). The first mail from a new server creates it — <code>GET /api/servers</code> derives the live registry (with open counts and per-type breakdowns) straight from the data, and the inbox filter bar renders from it. Zero config per server.</li><li><b>Scoped credentials.</b> Set <code>DEFAULT_SERVER</code> per deployment for items mailed without a server. Bots authenticate per server: mint a token with <code>POST /api/servers/:id/token</code> (admin: global <code>X-Powercordkit-Secret</code>) and send it as <code>X-Server-Token</code> — only that server's mail is accepted with it. Rotate with POST again, revoke with <code>DELETE /api/servers/:id/token</code>. Tokens are SHA-256 hashed in D1; the plaintext shows once.</li><li><b>Per-server bot wiring.</b> Run one bot (or one webhook config) per guild; each posts with its own <code>server</code> + token. Suggested mapping: guild slug → <code>server</code>, <code>#ideas</code> → <code>type=idea</code>, support channels → <code>type=support</code>, ticket threads → <code>type=ticket</code>.</li><li><b>Lock indicators.</b> Servers with a token row show 🔒 in the inbox filter — at a glance you see which feeds are credential-scoped.</li></ul>
+  <div class="note">Scaling: the inbox caps reads at 200 items per query and the daily cron purges items older than 90 days — one deployment comfortably covers a community with several busy servers.</div>
 
   <h2 id="s10"><span class="n">10</span>Operate &amp; troubleshoot</h2>
   <table><tr><th>Symptom</th><th>Fix</th></tr>

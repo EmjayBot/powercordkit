@@ -1,0 +1,25 @@
+{
+  // TOOLS-ONLY SITE — TEP community account (tools.tep.one).
+  // Serves `dist/tools` (built by `npm run build:tools`). No D1, no secrets.
+  // Deploy with: npm run deploy:tools  (while logged in as the community account)
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "powercordkit-tools",
+  "main": "src/tools.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "account_id": "7481a12e1f66bd216d224fb93ff3ec82",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "assets": {
+    "directory": "./dist/tools",
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    "ENVIRONMENT": "tools",
+    "COMMUNITY_ID": "tep"
+  },
+  "routes": [{ "pattern": "tools.tep.one/*", "zone_name": "tep.one" }]
+}

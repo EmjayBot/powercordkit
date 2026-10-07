@@ -20,7 +20,7 @@
     "secret:community": "wrangler secret bulk --config wrangler.community.jsonc",
     "build:tools": "node scripts/build-tools.mjs",
     "preview:tools": "wrangler pages dev dist/tools --port 8792",
-    "deploy:tools": "wrangler pages deploy dist/tools --project-name powercordkit-tools",
+    "deploy:tools": "npm run build:tools && wrangler deploy --config wrangler.tools.jsonc",
     "check": "tsc --noEmit"
   },
   "dependencies": {

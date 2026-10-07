@@ -35,12 +35,15 @@ included), repoints Mail links to the guide.
 ```powershell
 npm run build:tools        # → dist/tools/ (gitignored)
 npm run preview:tools     # local check on :8792
-npm run deploy:tools      # Cloudflare Pages project "powercordkit-tools"
+npm run deploy:tools      # Worker "powercordkit-tools" (wrangler.tools.jsonc, static only)
 ```
 
-Then add the custom domain in the Pages project (e.g. `tools.tep.one`, proxied
-CNAME). Same root-hosting rule as below: custom domain or user site, no
-project subpaths. To run with a different inbox later, just deploy the full
+`deploy:tools` serves `dist/tools` from a backend-free Worker
+(`src/tools.ts`) in the community account — no D1, no secrets — with
+`tools.tep.one` attached via routes. Then add DNS: `CNAME tools →
+&lt;worker&gt;.workers.dev`, proxied ON. Same root-hosting rule as below:
+custom domain or user site, no project subpaths. To run with a different
+inbox later, just deploy the full
 Worker (Mail setup guide at `/mail-setup/`) — the labs are identical.
 
 ## Use it anywhere (with credit)
