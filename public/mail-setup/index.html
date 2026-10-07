@@ -68,7 +68,8 @@ npm run db:migrate:remote:community</pre>
   <table><tr><th>Secret</th><th>Used by</th><th>Send as</th></tr>
   <tr><td><code>DISCOURSE_WEBHOOK_SECRET</code></td><td><code>POST /hooks/discourse</code></td><td>Discourse signs with it (HMAC-SHA256)</td></tr>
   <tr><td><code>DISCORD_WEBHOOK_SECRET</code></td><td><code>POST /hooks/discord</code></td><td>Header <code>X-Powercordkit-Secret</code></td></tr>
-  <tr><td><code>FORUM_WEBHOOK_SECRET</code> (optional)</td><td><code>POST /hooks/:name</code></td><td>Header <code>X-Forum-Secret</code> (falls back to Discord secret)</td></tr></table>
+  <tr><td><code>FORUM_WEBHOOK_SECRET</code> (optional)</td><td><code>POST /hooks/:name</code></td><td>Header <code>X-Forum-Secret</code> (falls back to Discord secret)</td></tr>
+  <tr><td><code>MOD_API_KEY</code> (recommended)</td><td>all <code>/api/*</code> except <code>/health</code></td><td>Header <code>X-Mod-Key</code> — browser UIs prompt once per session</td></tr></table>
   <pre><button class="copy">Copy</button># generate a secret (run 3x, or once per secret):
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 # store them (Wrangler prompts securely — never paste secrets into chat/logs):
