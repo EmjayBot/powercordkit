@@ -41,7 +41,7 @@ td{padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
   <p class="lead">The labs run anywhere static. The <b>Mail inbox</b> (unified triage, tickets, ideas, webhooks) needs one Cloudflare Worker + one D1 database per community. This guide takes you from zero to a live inbox in ~20 minutes. Free-tier friendly.</p>
 
   <div class="toc"><b>Steps</b>
-    <a href="#s0">0. What you get</a><a href="#s1">1. Prerequisites</a><a href="#s2">2. Install &amp; log in</a><a href="#s3">3. Database</a><a href="#s4">4. Secrets</a><a href="#s5">5. Deploy</a><a href="#s6">6. Custom domain</a><a href="#s7">7. Connect Discourse</a><a href="#s8">8. Connect Discord</a><a href="#s9">9. Other forums</a><a href="#servers">★ Multi-server mail</a><a href="#s10">10. Operate &amp; troubleshoot</a>
+    <a href="#s0">0. What you get</a><a href="#s1">1. Prerequisites</a><a href="#s2">2. Install &amp; log in</a><a href="#s3">3. Database</a><a href="#s4">4. Secrets</a><a href="#s5">5. Deploy</a><a href="#s6">6. Custom domain</a><a href="#s7">7. Connect Discourse</a><a href="#s8">8. Connect Discord</a><a href="#s9">9. Other forums</a><a href="#bot">★ Bot integration: reading channels</a><a href="#servers">★ Multi-server mail</a><a href="#s10">10. Operate &amp; troubleshoot</a>
   </div>
 
   <h2 id="s0"><span class="n">0</span>What you get</h2>
@@ -103,10 +103,57 @@ curl https://&lt;your-worker&gt;.workers.dev/api/health   # expect {"ok":true,"e
   <p>Fields: <code>server</code> (default <code>general</code>, configurable via <code>DEFAULT_SERVER</code>), <code>type</code> (<code>idea|support|ticket|mailed</code>), <code>title*</code>, <code>content</code>, <code>author</code>, <code>by</code>, <code>url</code> (jump link), <code>prio</code>. Missing/wrong secret → 401. Auto-capture: call it on <code>MESSAGE_CREATE</code> (ideas channel), <code>THREAD_CREATE</code> (ticket threads).</p>
   <p><b>Multiple servers:</b> no configuration needed — any <code>server</code> value is accepted and <code>GET /api/servers</code> derives the live registry (with per-type counts) from inbox data; the inbox UI builds its filters from it. To scope a bot to one server, mint a per-server token (admin auth = global <code>X-Powercordkit-Secret</code>; shown once, store it):</p>
   <pre><button class="copy">Copy</button>curl -X POST https://&lt;your-host&gt;/api/servers/my-server/token \
-  -H 'X-Powercordkit-Secret: &lt;DISCORD_WEBHOOK_SECRET&gt;'
+  -H 'X-Powercordkit-Secret: &lt;DISCORD_WEBHOOK_SECRET&gt;' \
+  -H 'X-Mod-Key: &lt;MOD_API_KEY&gt;'
 # → {"ok":true,"server":"my-server","token":"…"}
 # bots then send -H 'X-Server-Token: …' instead of the global secret.
-# revoke: curl -X DELETE …/api/servers/my-server/token -H 'X-Powercordkit-Secret: …'</pre>
+# revoke: curl -X DELETE …/api/servers/my-server/token -H 'X-Powercordkit-Secret: …' -H 'X-Mod-Key: …'</pre>
+
+  <h2 id="bot"><span class="n">★</span>Bot integration: reading channels</h2>
+  <p>Below is the complete recipe for a TEP-style setup: two guilds, four watched channels, one inbox. Adapt the IDs to yours.</p>
+  <p><b>1. Portal setup</b> — <a href="https://discord.com/developers/applications">discord.com/developers/applications</a> → your app → Bot: enable <b>Message Content Intent</b> (privileged), copy the bot token. Invite the bot with <code>applications.commands</code> + <code>View Channel</code>, <code>Read Message History</code> on the watched channels.</p>
+  <p><b>2. Events to subscribe</b> (discord.js v14 names):</p>
+  <table><tr><th>Guild</th><th>Event</th><th>Filter</th><th>Mail as</th></tr>
+  <tr><td>The East Pacific</td><td><code>threadCreate</code></td><td><code>thread.parentId === '894920335139409983'</code> (report-a-concern)</td><td><code>type:"ticket"</code>, title = thread name</td></tr>
+  <tr><td>The East Pacific</td><td><code>messageCreate</code></td><td><code>message.channelId === '1114601767724920893'</code> (support-desk), ignore bots</td><td><code>type:"support"</code>, title = first 80 chars</td></tr>
+  <tr><td>TEP Urth</td><td><code>messageCreate</code></td><td>channel <code>511665989210079252</code> (staffing) or <code>1252432781653315634</code> (administration), ignore bots</td><td><code>type:"ticket"</code></td></tr></table>
+  <p><b>3. Minimal bot</b> (Node 22, <code>npm i discord.js@14 undici</code> — intents: <code>Guilds</code> + <code>GuildMessages</code> + <code>MessageContent</code>):</p>
+  <pre><button class="copy">Copy</button>const { Client, GatewayIntentBits } = require('discord.js');
+const HOST = 'https://mod.tep.one'; // your inbox host
+const TOKENS = {
+  'the-east-pacific': process.env.TOKEN_TEP,   // X-Server-Token per guild
+  'tep-urth': process.env.TOKEN_URTH,
+};
+const seen = new Set(); // in-memory dedupe (threadCreate fires once; messages: skip seen ids)
+async function mail(server, payload) {
+  const r = await fetch(HOST + '/hooks/discord', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Server-Token': TOKENS[server] },
+    body: JSON.stringify({ server, by: 'auto-capture', src: 'discord', ...payload }),
+  });
+  if (!r.ok) console.error('mail failed', server, r.status, await r.text());
+}
+const jump = (g, c, t) =&gt; `https://discord.com/channels/${g}/${t ?? c}`;
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+client.on('threadCreate', (th) =&gt; {
+  if (th.guildId !== '633351482128728064') return;
+  if (th.parentId !== '894920335139409983') return;
+  mail('the-east-pacific', { type: 'ticket', title: 'Thread: ' + th.name.slice(0, 80),
+    content: `New concern thread by ${th.ownerId ?? 'unknown'}`, author: th.ownerId ?? 'unknown',
+    url: jump(th.guildId, th.parentId, th.id) });
+});
+client.on('messageCreate', (m) =&gt; {
+  if (m.author.bot || seen.has(m.id)) return; seen.add(m.id);
+  if (m.guildId === '633351482128728064' &amp;&amp; m.channelId === '1114601767724920893')
+    mail('the-east-pacific', { type: 'support', title: m.content.slice(0, 80) || '(attachment)', content: m.content.slice(0, 4000),
+      author: m.author.tag, url: jump(m.guildId, m.channelId, m.id) });
+  if (m.guildId === '508790398873894915' &amp;&amp; ['511665989210079252', '1252432781653315634'].includes(m.channelId))
+    mail('tep-urth', { type: 'ticket', title: m.content.slice(0, 80) || '(attachment)', content: m.content.slice(0, 4000),
+      author: m.author.tag, url: jump(m.guildId, m.channelId, m.id) });
+});
+client.login(process.env.DISCORD_BOT_TOKEN);</pre>
+  <div class="note"><b>Notes for your bot dev:</b> keep <code>seen</code> bounded in production (e.g. an LRU of the last 5k IDs — restarts re-send nothing because <code>messageCreate</code> only fires live). Set <code>prio:"high"</code> when a message mentions <code>@everyone/@here</code> or matches an invite-link regex. Attachments: put <code>m.attachments.first()?.url</code> into <code>content</code> (or <code>url</code> if there's no thread link). The inbox truncates safely (title 300, content 20000) — oversize payloads get 413 past 256KB, bad JSON gets 400, wrong token gets 401.</div>
+  <p><b>4. Verify without a bot</b> — copy the curl shape from §8 with your real IDs and one server's <code>X-Server-Token</code>, then check <code>GET /api/inbox?server=the-east-pacific</code> (with <code>X-Mod-Key</code>). Archive the test from the inbox UI when done.</p>
 
   <h2 id="s9"><span class="n">9</span>Other forums (NodeBB, Flarum, Lemmy, custom)</h2>
   <pre><button class="copy">Copy</button>curl -X POST https://&lt;your-host&gt;/hooks/nodebb \
