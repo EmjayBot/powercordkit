@@ -115,8 +115,7 @@ curl https://&lt;your-worker&gt;.workers.dev/api/health   # expect {"ok":true,"e
   <p><b>1. Portal setup</b> — <a href="https://discord.com/developers/applications">discord.com/developers/applications</a> → your app → Bot: enable <b>Message Content Intent</b> (privileged), copy the bot token. Invite the bot with <code>applications.commands</code> + <code>View Channel</code>, <code>Read Message History</code> on the watched channels.</p>
   <p><b>2. Events to subscribe</b> (discord.js v14 names):</p>
   <table><tr><th>Guild</th><th>Event</th><th>Filter</th><th>Mail as</th></tr>
-  <tr><td>The East Pacific</td><td><code>threadCreate</code></td><td><code>thread.parentId === '894920335139409983'</code> (report-a-concern)</td><td><code>type:"ticket"</code>, title = thread name</td></tr>
-  <tr><td>The East Pacific</td><td><code>messageCreate</code></td><td><code>message.channelId === '1114601767724920893'</code> (support-desk), ignore bots</td><td><code>type:"support"</code>, title = first 80 chars</td></tr>
+  <tr><td>The East Pacific</td><td><code>threadCreate</code></td><td><code>thread.parentId</code> is <code>894920335139409983</code> (report-a-concern) or <code>1114601767724920893</code> (support-desk forum)</td><td>tickets vs <code>type:"support"</code>, title = post name</td></tr>
   <tr><td>TEP Urth</td><td><code>messageCreate</code></td><td>channel <code>511665989210079252</code> (staffing) or <code>1252432781653315634</code> (administration), ignore bots</td><td><code>type:"ticket"</code></td></tr></table>
   <p><b>3. Minimal bot</b> (Node 22+, save as <code>bot.cjs</code>, run <code>npm i discord.js@14</code> — intents: <code>Guilds</code> + <code>GuildMessages</code> + <code>MessageContent</code>):</p>
   <pre><button class="copy">Copy</button>const { Client, GatewayIntentBits } = require('discord.js');
@@ -138,16 +137,16 @@ const jump = (g, c, t) =&gt; `https://discord.com/channels/${g}/${t ?? c}`;
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 client.on('threadCreate', (th) =&gt; {
   if (th.guildId !== '633351482128728064') return;
-  if (th.parentId !== '894920335139409983') return;
-  mail('the-east-pacific', { type: 'ticket', title: 'Thread: ' + th.name.slice(0, 80),
-    content: `New concern thread by ${th.ownerId ?? 'unknown'}`, author: th.ownerId ?? 'unknown',
+  // report-a-concern → ticket, support-desk forum → support
+  const kind = th.parentId === '894920335139409983' ? 'ticket'
+    : th.parentId === '1114601767724920893' ? 'support' : null;
+  if (!kind) return;
+  mail('the-east-pacific', { type: kind, title: (kind === 'support' ? 'Post: ' : 'Thread: ') + th.name.slice(0, 80),
+    content: `New ${kind === 'support' ? 'support post' : 'concern thread'} by ${th.ownerId ?? 'unknown'}`, author: th.ownerId ?? 'unknown',
     url: jump(th.guildId, th.parentId, th.id) });
 });
 client.on('messageCreate', (m) =&gt; {
   if (m.author.bot || seen.has(m.id)) return; seen.add(m.id);
-  if (m.guildId === '633351482128728064' &amp;&amp; m.channelId === '1114601767724920893')
-    mail('the-east-pacific', { type: 'support', title: m.content.slice(0, 80) || '(attachment)', content: m.content.slice(0, 4000),
-      author: m.author.tag, url: jump(m.guildId, m.channelId, m.id) });
   if (m.guildId === '508790398873894915' &amp;&amp; ['511665989210079252', '1252432781653315634'].includes(m.channelId))
     mail('tep-urth', { type: 'ticket', title: m.content.slice(0, 80) || '(attachment)', content: m.content.slice(0, 4000),
       author: m.author.tag, url: jump(m.guildId, m.channelId, m.id) });
@@ -156,15 +155,15 @@ client.login(process.env.DISCORD_BOT_TOKEN);</pre>
   <p><b>Run it:</b></p>
   <pre><button class="copy">Copy</button>set DISCORD_BOT_TOKEN=… &amp;&amp; set TOKEN_TEP=… &amp;&amp; set TOKEN_URTH=… &amp;&amp; node bot.cjs
 # keep it alive (one option): npm i -g pm2 &amp;&amp; pm2 start bot.cjs --name modmail &amp;&amp; pm2 save</pre>
-  <p>Use the two <code>X-Server-Token</code> values from your handoff pack for <code>TOKEN_TEP</code> / <code>TOKEN_URTH</code>. Then post a test message in <code>support-desk</code> — it should appear in the inbox within seconds (archive it after).</p>
+  <p>Use the two <code>X-Server-Token</code> values from your handoff pack for <code>TOKEN_TEP</code> / <code>TOKEN_URTH</code>. Then create a test post in <code>support-desk</code> — it should appear in the inbox within seconds (archive it after).</p>
   <div class="note"><b>Notes for your bot dev:</b> keep <code>seen</code> bounded in production (e.g. an LRU of the last 5k IDs — restarts re-send nothing because <code>messageCreate</code> only fires live). Set <code>prio:"high"</code> when a message mentions <code>@everyone/@here</code> or matches an invite-link regex. Attachments: put <code>m.attachments.first()?.url</code> into <code>content</code> (or <code>url</code> if there's no thread link). The inbox truncates safely (title 300, content 20000) — oversize payloads get 413 past 256KB, bad JSON gets 400, wrong token gets 401.</div>
   <p><b>4. Verify without a bot</b> — copy the curl shape from §8 with your real IDs and one server's <code>X-Server-Token</code>, then check <code>GET /api/inbox?server=the-east-pacific</code> (with <code>X-Mod-Key</code>). Archive the test from the inbox UI when done.</p>
 
   <p><b>Option C — BotGhost (no code, no hosting).</b> Step by step, per feed (do it 4 times — once per row below):</p>
   <ol>
   <li>Dashboard → your bot → <b>invite it</b> to the Discord server if it isn't there (Modules → <i>Invite Your Bot</i>).</li>
-  <li>Go to <b>Custom Events</b> → click the yellow <b>Custom Event Builder</b> block → pick the trigger: <b>“When a new message is sent”</b> (Message Events) for channels, <b>“When a thread is created”</b> (Thread Events) for <code>report-a-concern</code>. Name it, e.g. <code>mail-support-desk</code>.</li>
-  <li>Add a <b>Channel Condition</b> block first: channel IS exactly your channel ID (e.g. <code>1114601767724920893</code>). For the thread event, condition on the parent channel ID <code>894920335139409983</code>. This stops other channels leaking into the inbox.</li>
+  <li>Go to <b>Custom Events</b> → click the yellow <b>Custom Event Builder</b> block → pick the trigger: <b>“When a thread is created”</b> (Thread Events) for the two forum channels (<code>report-a-concern</code>, <code>support-desk</code>), <b>“When a new message is sent”</b> (Message Events) for <code>staffing</code> / <code>administration</code>. Name it, e.g. <code>mail-support-desk</code>.</li>
+  <li>Add a <b>Channel Condition</b> block first: for thread events, condition on the <b>parent</b> channel ID (<code>894920335139409983</code> or <code>1114601767724920893</code>); for message events, channel IS exactly the channel ID. This stops other channels leaking into the inbox.</li>
   <li>Optionally add a <b>User Condition</b> so the bot ignores its own/other bots' messages (<code>{isBot}</code> is false) — prevents loops.</li>
   <li>Add action → <b>Send an API Request</b> → open the <b>Request Builder</b>:
     <ul><li>URL: <code>https://mod.tep.one/hooks/discord</code> (your host), type <b>POST</b>.</li>
@@ -173,7 +172,7 @@ client.login(process.env.DISCORD_BOT_TOKEN);</pre>
     <li>Tick <b>Replace variables in Request Body</b>, then <b>Test Request</b> — expect status 200/201. Check the inbox, archive the test.</li></ul></li>
   </ol>
   <table><tr><th>Feed</th><th>Event + condition</th><th>Raw JSON body</th></tr>
-  <tr><td>support-desk → support</td><td>message sent, channel <code>1114601767724920893</code></td><td><code>{"server":"the-east-pacific","type":"support","title":"{Message.content, first 80 chars}","content":"{Message.content}","author":"{Message.author.tag}","by":"botghost","url":"https://discord.com/channels/{server_id}/{channel_id}/{Message.id}"}</code></td></tr>
+  <tr><td>support-desk (forum) → support</td><td>thread created, parent <code>1114601767724920893</code></td><td><code>{"server":"the-east-pacific","type":"support","title":"{thread name}","content":"{first post text}","author":"{thread owner}","by":"botghost","url":"https://discord.com/channels/{server_id}/{thread id}"}</code></td></tr>
   <tr><td>report-a-concern → ticket</td><td>thread created, parent <code>894920335139409983</code></td><td><code>{"server":"the-east-pacific","type":"ticket","title":"Thread: {thread name}","content":"New concern thread","author":"{thread owner}","by":"botghost","url":"https://discord.com/channels/{server_id}/{thread id}"}</code></td></tr>
   <tr><td>staffing / administration → ticket</td><td>message sent, channel <code>511665989210079252</code> (then duplicate the event for <code>1252432781653315634</code>)</td><td><code>{"server":"tep-urth","type":"ticket","title":"{Message.content, first 80 chars}","content":"{Message.content}","author":"{Message.author.tag}","by":"botghost","url":"https://discord.com/channels/{server_id}/{channel_id}/{Message.id}"}</code></td></tr></table>
   <p>Trim titles yourself if needed: our inbox caps title at 300 chars and content at 20000, but a clean <code>title</code> (first ~80 chars) triages faster. A 401 means the <code>X-Server-Token</code> is wrong; 400 means malformed JSON (check Test Request output).</p>
