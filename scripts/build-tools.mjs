@@ -71,11 +71,17 @@ if (!css) {
   console.error('Could not extract CSS from showcase hub');
   process.exit(1);
 }
-const labs = (showcase.match(/<!-- TOOLS:LABS-START -->([\s\S]*?)<!-- TOOLS:LABS-END -->/) || [])[1] || '';
-if (!labs.includes('/embeds/')) {
+const labsRaw = (showcase.match(/<!-- TOOLS:LABS-START -->([\s\S]*?)<!-- TOOLS:LABS-END -->/) || [])[1] || '';
+if (!labsRaw.includes('/embeds/')) {
   console.error('Could not extract lab cards from showcase hub');
   process.exit(1);
 }
+// One unified grid: strip the showcase wrapper, drop " Lab" from card
+// titles ("Embed Lab" → "Embed"), append the setup card. Showcase untouched.
+const labs = labsRaw
+  .replace(/^\s*<div class="grid">/, '')
+  .replace(/<\/div>\s*$/, '')
+  .replace(/ Lab<\/h3>/g, '</h3>');
 const escAttr = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const hub = `<!DOCTYPE html>
 <html lang="en">
@@ -93,9 +99,10 @@ const hub = `<!DOCTYPE html>
   <a class="logo" href="/"><img src="${escAttr(logo)}" alt="" /> ${escAttr(brand)}</a>
   <div class="links">${links.map((l) => `<a href="${escAttr(l.href)}">${escAttr(l.label)}</a>`).join('')}</div>
 </div>
-<div class="wrap" style="padding-top:24px">
-  <div class="grid" id="tools">${labs}</div>
-  <div class="grid" style="margin-top:12px"><a class="card" href="/mail-setup/"><h3>Mail setup guide</h3><p>Self-host the inbox in ~20 minutes: Worker, D1, secrets, domain, Discourse + Discord wiring.</p></a></div>
+<div class="wrap" style="padding-top:24px;max-width:1080px">
+  <div class="grid" id="tools">${labs}
+    <a class="card" href="/mail-setup/"><h3>Mail setup guide</h3><p>Self-host the inbox in ~20 minutes: Worker, D1, secrets, domain, Discourse + Discord wiring.</p></a>
+  </div>
 </div>
 <div class="foot"><div class="in" style="justify-content:center">
   <span>${identity.footerNote}</span>
@@ -111,6 +118,9 @@ const bp = base === '/' ? '' : base.slice(0, -1);
 const rewriteFile = (p) => {
   let t = readFileSync(p, 'utf8');
   t = t.replace(/(href|src)="\/(?!\/)/g, `$1="${bp}/`);
+  // Forks don't say "Lab" anywhere: page titles + topbar labels.
+  t = t.replace(/ Lab — PowerCordKit<\/title>/g, ' — PowerCordKit</title>');
+  t = t.replace(/\/ ([A-Za-z]+) Lab<\/span>/g, '/$1</span>');
   writeFileSync(p, t);
 };
 const walkHtml = (dir) => {
