@@ -31,10 +31,10 @@ Anyone can run the labs without the Mail backend. `npm run build:tools`
 packages `./public` into `dist/tools/`: drops Mail/Tickets/Ideas, swaps the
 hub's Mail + API sections for a **Mail setup guide** card (`/mail-setup/`,
 included), repoints Mail links to the guide — and generates a blank-slate
-utility hub (no header, no hero, no section titles — just tool cards, the
-setup card, and the Powered-by-PowerCordKit footer) skinned from
-`tools.config.json` (`siteName`, `tagline`, `accent`, `baseUrl`,
-`footerNote`). Forks set their own name and links: `baseUrl: "/"` for
+utility hub (tool cards, the setup card, and the Powered-by-PowerCordKit
+footer — no hero, no marketing) skinned from `tools.config.json` (`siteName`,
+`tagline`, `accent`, `baseUrl`, `footerNote`, plus a custom `header` with
+your own `brand`, `logo` and `links`). Forks set their own name and links: `baseUrl: "/"` for
 domain root, `"/my-tools/"` for a subpath (this also makes GitHub Pages
 project sites work). Lab cards and CSS are lifted from the showcase hub so
 they never drift. Copy the config to e.g. `tools.tep.json`, tweak, and

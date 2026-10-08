@@ -4,5 +4,13 @@
   "tagline": "7 static labs for Discord mods — no account, no backend, works offline.",
   "accent": "#5865F2",
   "baseUrl": "/",
+  "header": {
+    "brand": "Community Toolset",
+    "logo": "/assets/powercordkit_logo.png",
+    "links": [
+      { "label": "Tools", "href": "#tools" },
+      { "label": "Mail setup", "href": "/mail-setup/" }
+    ]
+  },
   "footerNote": "Powered by PowerCordKit"
 }

@@ -27,6 +27,22 @@ if (!identity.footerNote.includes('PowerCordKit')) {
   console.error('tools identity footerNote must keep the Powered-by-PowerCordKit credit');
   process.exit(1);
 }
+// Custom header: fork's own brand + links. Falls back to siteName + a
+// Tools/Mail-setup pair when omitted. hrefs may be "#anchors", "/root-paths"
+// (rebased to baseUrl automatically) or full https:// URLs.
+const header = identity.header && typeof identity.header === 'object' ? identity.header : {};
+const brand = typeof header.brand === 'string' && header.brand ? header.brand : identity.siteName;
+const logo = typeof header.logo === 'string' && header.logo ? header.logo : '/assets/powercordkit_logo.png';
+const links = Array.isArray(header.links) && header.links.length > 0 ? header.links : [
+  { label: 'Tools', href: '#tools' },
+  { label: 'Mail setup', href: '/mail-setup/' },
+];
+for (const l of links) {
+  if (!l || typeof l.label !== 'string' || typeof l.href !== 'string' || !l.label || !l.href) {
+    console.error(`tools identity ${identityFile}: every header.links[] needs {label, href} strings`);
+    process.exit(1);
+  }
+}
 let base = identity.baseUrl;
 if (!base.startsWith('/')) {
   console.error('tools identity baseUrl must start with / (use "/" for domain root)');
@@ -73,8 +89,12 @@ const hub = `<!DOCTYPE html>
 <style>${css.replace('--b:#5865F2', `--b:${identity.accent}`)}</style>
 </head>
 <body>
-<div class="wrap" style="padding-top:28px">
-  ${labs}
+<div class="nav">
+  <a class="logo" href="/"><img src="${escAttr(logo)}" alt="" /> ${escAttr(brand)}</a>
+  <div class="links">${links.map((l) => `<a href="${escAttr(l.href)}">${escAttr(l.label)}</a>`).join('')}</div>
+</div>
+<div class="wrap" style="padding-top:24px">
+  <div class="grid" id="tools">${labs}</div>
   <div class="grid" style="margin-top:12px"><a class="card" href="/mail-setup/"><h3>Mail setup guide</h3><p>Self-host the inbox in ~20 minutes: Worker, D1, secrets, domain, Discourse + Discord wiring.</p></a></div>
 </div>
 <div class="foot"><div class="in" style="justify-content:center">
@@ -103,10 +123,11 @@ const walkHtml = (dir) => {
 walkHtml(out);
 
 // The setup guide ships with the tools site too — repoint its Mail-overview
-// back-links at the tools hub (no /mail/ route exists here).
+// back-links at the tools hub (no /mail/ route exists here). Runs after the
+// baseUrl rebase, so match the rebased form.
 const setupPath = join(out, 'mail-setup', 'index.html');
 let setup = readFileSync(setupPath, 'utf8');
-setup = setup.split('<a href="/mail/">Mail overview</a>').join('<a href="/">Tools hub</a>');
+setup = setup.split(`<a href="${bp}/mail/">Mail overview</a>`).join(`<a href="${bp}/">Tools hub</a>`);
 writeFileSync(setupPath, setup);
 
 // Sanity: hub must not LINK to removed routes anymore.
