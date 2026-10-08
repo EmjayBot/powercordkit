@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { pollDiscord } from './poll';
 
 type Bindings = {
   DB: D1Database;
@@ -13,6 +14,8 @@ type Bindings = {
   MAX_PAYLOAD_BYTES?: string;
   DEFAULT_SERVER?: string;
   MOD_API_KEY?: string;
+  DISCORD_BOT_TOKEN?: string;
+  FEED_MAP?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -667,8 +670,7 @@ app.all('*', async (c) => {
 
 // Retention: cron deletes inbox items (and their notes) older than 90 days.
 // Enable via "triggers": { "crons": ["0 3 * * *"] } in wrangler configs.
-async function purgeOld(db: D1Database, days = 90): Promise<number> {
-  const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+async function purgeOld(db: D1Database, days = 90): Promise<number> {  const cutoff = new Date(Date.now() - days * 86400000).toISOString();
   await db
     .prepare(`DELETE FROM notes WHERE item_id IN (SELECT id FROM inbox_items WHERE created_at < ?)`)
     .bind(cutoff)
@@ -679,12 +681,22 @@ async function purgeOld(db: D1Database, days = 90): Promise<number> {
 
 export default {
   fetch: app.fetch,
-  async scheduled(_event: ScheduledEvent, env: Bindings, _ctx: ExecutionContext): Promise<void> {
+  async scheduled(event: ScheduledEvent, env: Bindings, _ctx: ExecutionContext): Promise<void> {
+    // Daily retention window (cron "0 3 * * *"); every other cron tick polls.
+    if (event.cron === '0 3 * * *') {
+      try {
+        const deleted = await purgeOld(env.DB);
+        jsonLog('info', 'retention purge complete', { deleted });
+      } catch (err) {
+        jsonLog('error', 'retention purge failed', { error: String(err) });
+      }
+      return;
+    }
     try {
-      const deleted = await purgeOld(env.DB);
-      jsonLog('info', 'retention purge complete', { deleted });
+      const r = await pollDiscord(env.DB, env, (input, fb) => insertInboxItem(env.DB, input, fb));
+      if ((r.mailed ?? 0) > 0 || r.skipped !== 'no-bot-token') jsonLog('info', 'discord poll', r);
     } catch (err) {
-      jsonLog('error', 'retention purge failed', { error: String(err) });
+      jsonLog('error', 'discord poll failed', { error: String(err) });
     }
   },
 };
