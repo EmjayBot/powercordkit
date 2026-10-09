@@ -71,7 +71,8 @@
     if (foot) {
       foot.className = 'pck-foot';
       var credit = cfg.creditUrl || home;
-      foot.innerHTML = '<a href="' + esc(credit) + '" target="_blank" rel="noopener"><img src="' + esc(logo) + '" alt="" />' + esc(cfg.footerNote || 'Powered by PowerCordKit') + '</a>';
+      var gh = cfg.githubUrl ? ' · <a href="' + esc(cfg.githubUrl) + '" target="_blank" rel="noopener">GitHub</a>' : '';
+      foot.innerHTML = '<a href="' + esc(credit) + '" target="_blank" rel="noopener"><img src="' + esc(logo) + '" alt="" />' + esc(cfg.footerNote || 'Powered by PowerCordKit') + '</a>' + gh;
     }
     if (feats.mailSetup === false) {
       var hidden = document.querySelectorAll('[data-pck-feature="mailSetup"]');

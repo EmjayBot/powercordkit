@@ -27,5 +27,6 @@
     ]
   },
   "footerNote": "Powered by PowerCordKit",
-  "creditUrl": "https://powercordkit.emjay.fyi"
+  "creditUrl": "https://powercordkit.emjay.fyi",
+  "githubUrl": "https://github.com/EmjayBot/powercordkit"
 }

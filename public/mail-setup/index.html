@@ -154,9 +154,9 @@ const TOKENS = {                                   // server slug -> X-Server-To
   'server-two': process.env.TOKEN_TWO,
 };
 // watched forum parents -> mail type ("ticket" or "support")
-const FORUMS = { '<forum-channel-id-a>': 'ticket', '<forum-channel-id-b>': 'support' };
+const FORUMS = { '&lt;forum-channel-id-a&gt;': 'ticket', '&lt;forum-channel-id-b&gt;': 'support' };
 // watched text channels -> server slug
-const CHANNELS = { '<ticket-channel-id>': 'server-two' };
+const CHANNELS = { '&lt;ticket-channel-id&gt;': 'server-two' };
 const jump = (g, c, t) => `https://discord.com/channels/${g}/${t ?? c}`;
 async function mail(server, payload) {
   const r = await fetch(HOST + '/hooks/discord', {

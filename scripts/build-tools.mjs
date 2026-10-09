@@ -34,6 +34,7 @@ const header = identity.header && typeof identity.header === 'object' ? identity
 const brand = typeof header.brand === 'string' && header.brand ? header.brand : identity.siteName;
 const logo = typeof header.logo === 'string' && header.logo ? header.logo : '/assets/powercordkit_logo.png';
 const creditUrl = typeof identity.creditUrl === 'string' && identity.creditUrl ? identity.creditUrl : 'https://powercordkit.emjay.fyi';
+const githubUrl = typeof identity.githubUrl === 'string' && identity.githubUrl ? identity.githubUrl : 'https://github.com/EmjayBot/powercordkit';
 const links = Array.isArray(header.links) && header.links.length > 0 ? header.links : [
   { label: 'Tools', href: '#tools' },
   { label: 'Mail setup', href: '/mail-setup/' },
@@ -113,7 +114,7 @@ const hub = `<!DOCTYPE html>
   </div>
 </div>
 <div class="foot"><div class="in" style="justify-content:center">
-  <span><a href="${escAttr(creditUrl)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><img src="${escAttr(logo)}" alt="" style="width:20px;height:20px;border-radius:5px;vertical-align:-5px;margin-right:7px" />${identity.footerNote}</a></span>
+  <span><a href="${escAttr(creditUrl)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><img src="${escAttr(logo)}" alt="" style="width:20px;height:20px;border-radius:5px;vertical-align:-5px;margin-right:7px" />${identity.footerNote}</a> · <a href="${escAttr(githubUrl)}" target="_blank" rel="noopener" style="color:inherit">GitHub</a></span>
 </div></div>
 </body>
 </html>
@@ -142,6 +143,7 @@ writeFileSync(
       },
       footerNote: identity.footerNote,
       creditUrl,
+      githubUrl,
     },
     null,
     2,
