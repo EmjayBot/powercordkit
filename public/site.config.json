@@ -20,5 +20,6 @@
       { "label": "Setup", "href": "/mail-setup/" }
     ]
   },
-  "footerNote": "Powered by PowerCordKit"
+  "footerNote": "Powered by PowerCordKit",
+  "creditUrl": "https://powercordkit.emjay.fyi"
 }

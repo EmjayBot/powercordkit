@@ -70,7 +70,8 @@
     var foot = document.getElementById('pck-foot');
     if (foot) {
       foot.className = 'pck-foot';
-      foot.innerHTML = '<a href="' + esc(home) + '"><img src="' + esc(logo) + '" alt="" />' + esc(cfg.footerNote || 'Powered by PowerCordKit') + '</a>';
+      var credit = cfg.creditUrl || home;
+      foot.innerHTML = '<a href="' + esc(credit) + '" target="_blank" rel="noopener"><img src="' + esc(logo) + '" alt="" />' + esc(cfg.footerNote || 'Powered by PowerCordKit') + '</a>';
     }
     if (feats.mailSetup === false) {
       var hidden = document.querySelectorAll('[data-pck-feature="mailSetup"]');

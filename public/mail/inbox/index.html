@@ -39,7 +39,7 @@
     <div><h4>Servers</h4><div id="srv-filters"><div class="srv active" data-server="all"><span>All Servers</span><span id="c-all">–</span></div></div></div>
     <div><h4>Type</h4><div id="type-filters"><div class="srv active" data-type="all"><span>All types</span></div></div></div>
     <div><h4>View</h4><div id="view-filters"><div class="srv active" data-status="open"><span>Open</span></div><div class="srv" data-status="completed"><span>Completed</span></div></div></div>
-    <div style="margin-top:auto"><div style="font-size:10px;color:var(--m);line-height:1.6" id="hook-hint">Discourse webhook:<br/>POST /hooks/discourse</div></div>
+    <div style="margin-top:auto"><div style="font-size:10px;color:var(--m);line-height:1.6" id="hook-hint">Discourse webhook:<br/>POST /hooks/discourse</div><div style="font-size:10px;margin-top:10px"><a href="https://powercordkit.emjay.fyi" target="_blank" rel="noopener" style="color:var(--m);text-decoration:none">Powered by PowerCordKit</a></div></div>
   </div>
   <div class="list">
     <div class="list-top"><input class="search" id="q" placeholder="Search ideas, bugs, tickets…" /><button class="btn" id="new-btn">+ New</button></div>
@@ -305,7 +305,6 @@ document.querySelector('.side').addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E') { if (sel && document.activeElement.tagName !== 'INPUT') { sel.archived ? reopen(sel.id) : complete(sel.id); } } if (e.key === 'Escape') closeM(); });
 load();
 </script>
-<div id="pck-foot"></div>
 <script src="/assets/site.js"></script>
 </body>
 </html>

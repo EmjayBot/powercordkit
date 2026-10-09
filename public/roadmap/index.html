@@ -54,6 +54,12 @@ function card(d){
 async function load(){
   try {
     const r = await fetch('/api/roadmap', { cache: 'no-store' });
+    if (r.status === 401) {
+      $('sub').innerHTML = '🔒 This roadmap is private. <a href="/api/auth/login" style="color:#5865F2">Log in</a> to view it.';
+      for (const k of ['planned','progress','shipped']) { $(k).innerHTML = '<div class="empty">—</div>'; $('n-' + k).textContent = ''; }
+      return;
+    }
+    if (!r.ok) throw new Error('API ' + r.status);
     const j = await r.json();
     const items = j.items || [];
     const groups = { planned: [], progress: [], shipped: [] };

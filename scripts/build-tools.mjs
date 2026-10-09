@@ -33,6 +33,7 @@ if (!identity.footerNote.includes('PowerCordKit')) {
 const header = identity.header && typeof identity.header === 'object' ? identity.header : {};
 const brand = typeof header.brand === 'string' && header.brand ? header.brand : identity.siteName;
 const logo = typeof header.logo === 'string' && header.logo ? header.logo : '/assets/powercordkit_logo.png';
+const creditUrl = typeof identity.creditUrl === 'string' && identity.creditUrl ? identity.creditUrl : 'https://powercordkit.emjay.fyi';
 const links = Array.isArray(header.links) && header.links.length > 0 ? header.links : [
   { label: 'Tools', href: '#tools' },
   { label: 'Mail setup', href: '/mail-setup/' },
@@ -112,7 +113,7 @@ const hub = `<!DOCTYPE html>
   </div>
 </div>
 <div class="foot"><div class="in" style="justify-content:center">
-  <span><img src="${escAttr(logo)}" alt="" style="width:20px;height:20px;border-radius:5px;vertical-align:-5px;margin-right:7px" />${identity.footerNote}</span>
+  <span><a href="${escAttr(creditUrl)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><img src="${escAttr(logo)}" alt="" style="width:20px;height:20px;border-radius:5px;vertical-align:-5px;margin-right:7px" />${identity.footerNote}</a></span>
 </div></div>
 </body>
 </html>
@@ -140,6 +141,7 @@ writeFileSync(
         links: toolLinks.map((l) => ({ label: l.label, href: rebased(l.href) })),
       },
       footerNote: identity.footerNote,
+      creditUrl,
     },
     null,
     2,

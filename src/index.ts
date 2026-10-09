@@ -27,6 +27,7 @@ type Bindings = {
   FORUM_WEBHOOK_SECRET?: string;
   MAX_PAYLOAD_BYTES?: string;
   DEFAULT_SERVER?: string;
+  PUBLIC_ROADMAP?: string;
   MOD_API_KEY?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
@@ -58,6 +59,13 @@ function newId(): string {
 // community: "tep.one") so neither site leaks the other's identity.
 function defaultServer(env: Bindings): string {
   return (env.DEFAULT_SERVER ?? 'general').slice(0, 80);
+}
+
+// Public roadmap is the default; set PUBLIC_ROADMAP=0 to make /api/roadmap
+// require the same auth as the rest of /api (mod session / Access / mod key).
+function roadmapIsPublic(env: Bindings): boolean {
+  const v = (env.PUBLIC_ROADMAP ?? '1').toLowerCase();
+  return !(v === '0' || v === 'false' || v === 'off' || v === 'no');
 }
 
 function bad(msg: string, status = 400): Response {
@@ -101,7 +109,8 @@ app.use('/hooks/*', guardApi);
 //  3. Shared key X-Mod-Key vs MOD_API_KEY (workers.dev origin, scripts, dev).
 app.use('/api/*', async (c, next) => {
   const path = new URL(c.req.url).pathname;
-  if (path === '/api/health' || path === '/api/roadmap' || path.startsWith('/api/auth/')) return next();
+  if (path === '/api/health' || path.startsWith('/api/auth/')) return next();
+  if (path === '/api/roadmap' && roadmapIsPublic(c.env)) return next();
   if (c.env.SESSION_SECRET) {
     const cookie = readCookie(c.req.header('cookie'), 'pck_session');
     if (await verifySession(cookie, c.env.SESSION_SECRET)) return next();
