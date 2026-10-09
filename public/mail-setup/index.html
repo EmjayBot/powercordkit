@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Mail Setup Guide</title>
-<meta name="description" content="Self-host the mod inbox: Cloudflare Workers + D1, custom domains, Discourse and Discord wiring." />
+<meta name="description" content="Self-host the mod inbox: Cloudflare Workers + D1, custom domains, Discord + Discourse wiring, Discord login." />
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
@@ -38,14 +38,15 @@ td{padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
 <div id="pck-nav"></div>
 <div class="wrap">
   <h1>Self-host the Mail inbox</h1>
-  <p class="lead">The labs run anywhere static. The <b>Mail inbox</b> (unified triage, tickets, ideas, webhooks) needs one Cloudflare Worker + one D1 database per community. This guide takes you from zero to a live inbox in ~20 minutes. Free-tier friendly.</p>
+  <p class="lead">The labs run anywhere static. The <b>Mail inbox</b> (unified triage, tickets, ideas, roadmap, webhooks) needs one Cloudflare Worker + one D1 database per community. This guide takes you from zero to a live inbox in ~20 minutes. Free-tier friendly.</p>
 
   <div class="toc"><b>Steps</b>
-    <a href="#s0">0. What you get</a><a href="#s1">1. Prerequisites</a><a href="#s2">2. Install &amp; log in</a><a href="#s3">3. Database</a><a href="#s4">4. Secrets</a><a href="#s5">5. Deploy</a><a href="#s6">6. Custom domain</a><a href="#s7">7. Connect Discourse</a><a href="#s8">8. Connect Discord</a><a href="#s9">9. Other forums</a><a href="#bot">★ Bot integration: reading channels</a><a href="#servers">★ Multi-server mail</a><a href="#s10">10. Operate &amp; troubleshoot</a>
+    <a href="#s0">0. What you get</a><a href="#s1">1. Prerequisites</a><a href="#s2">2. Install &amp; log in</a><a href="#s3">3. Database</a><a href="#s4">4. Secrets</a><a href="#s5">5. Deploy</a><a href="#s6">6. Custom domain</a><a href="#s7">7. Mod access (Discord login)</a><a href="#s8">8. Connect Discord (webhooks)</a><a href="#s9">9. Connect Discourse</a><a href="#s10">10. Other forums</a><a href="#ideas">★ “Save as Idea” command</a><a href="#bot">★ Bot integration: reading channels</a><a href="#roadmap">★ Roadmap</a><a href="#servers">★ Multi-server mail</a><a href="#s11">11. Operate &amp; troubleshoot</a>
   </div>
 
   <h2 id="s0"><span class="n">0</span>What you get</h2>
   <p>One deployment serves the <b>tools hub + all labs + the Mail UI</b>. The inbox API (<code>/api/*</code>) and webhooks (<code>/hooks/*</code>) run in the same Worker, backed by D1. Two communities = two deployments (e.g. <code>tools.example.com</code> + <code>mod.example.org</code>), each with its own Worker, D1 and secrets — same codebase, two configs (<code>wrangler.jsonc</code> + <code>wrangler.community.jsonc</code>).</p>
+  <p>Branding, header and links are configurable in <code>public/site.config.json</code> (no rebuild needed — the shell script <code>public/assets/site.js</code> renders them from that file, or from a remote <code>configUrl</code>). The <code>Powered by PowerCordKit</code> footer credit must stay (LICENSE.md).</p>
 
   <h2 id="s1"><span class="n">1</span>Prerequisites</h2>
   <ul><li>Node.js ≥ 22.12 and a <b>Cloudflare account</b> (free tier is enough).</li><li>The PowerCordKit repo on your machine.</li><li>Your community's Discord server + (optionally) Discourse forum admin access.</li></ul>
@@ -62,20 +63,29 @@ npx wrangler whoami     # confirm the right email + account ID</pre>
   <pre><button class="copy">Copy</button>npm run db:create:community          # or: npx wrangler d1 create powercordkit-mail-community --config wrangler.community.jsonc
 # paste the printed database_id into wrangler.community.jsonc → d1_databases[0]
 npm run db:migrate:remote:community</pre>
-  <p>Schema (<code>migrations/0001_init.sql</code>): <code>inbox_items</code> + <code>notes</code>, prepared statements only. Verify: <code>npx wrangler d1 execute powercordkit-mail-community --remote --config wrangler.community.jsonc --command "SELECT count(*) FROM inbox_items"</code>.</p>
+  <p>Migrations build <code>inbox_items</code>, <code>notes</code>, <code>server_tokens</code>, <code>poll_state</code>, <code>seen_threads</code>, plus the roadmap columns (<code>roadmap</code>, <code>roadmap_status</code>, <code>roadmap_date</code>). Verify: <code>npx wrangler d1 execute powercordkit-mail-community --remote --config wrangler.community.jsonc --command "SELECT count(*) FROM inbox_items"</code>.</p>
 
   <h2 id="s4"><span class="n">4</span>Secrets</h2>
-  <table><tr><th>Secret</th><th>Used by</th><th>Send as</th></tr>
+  <p>Everything is set with <code>wrangler secret put</code> (write-only) or as plain <code>vars</code> in the wrangler config. Generate random secrets with <code>node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"</code>.</p>
+  <table><tr><th>Secret</th><th>Used by</th><th>Notes</th></tr>
+  <tr><td><code>DISCORD_CLIENT_ID</code></td><td>Discord login + “Save as Idea”</td><td>Your Discord app's Application ID</td></tr>
+  <tr><td><code>DISCORD_CLIENT_SECRET</code></td><td>Discord login</td><td>OAuth2 client secret</td></tr>
+  <tr><td><code>SESSION_SECRET</code></td><td>Discord login</td><td>Random; signs the session cookie. Rotating it logs everyone out</td></tr>
+  <tr><td><code>DISCORD_GUILD_ID</code></td><td>Discord login</td><td>The guild members must belong to</td></tr>
+  <tr><td><code>DISCORD_MOD_ROLE_IDS</code></td><td>Discord login</td><td>Comma-separated role IDs; any one grants inbox access</td></tr>
+  <tr><td><code>DISCORD_PUBLIC_KEY</code></td><td>“Save as Idea”</td><td>App → General Information → Public Key (verifies interactions)</td></tr>
+  <tr><td><code>DISCORD_BOT_TOKEN</code></td><td>Poller + tag/close actions</td><td>Bot token (View Channel, Read Message History, Manage Threads)</td></tr>
+  <tr><td><code>DISCORD_WEBHOOK_SECRET</code></td><td><code>POST /hooks/discord</code></td><td>Sent as header <code>X-Powercordkit-Secret</code>; also admin key for token minting</td></tr>
   <tr><td><code>DISCOURSE_WEBHOOK_SECRET</code></td><td><code>POST /hooks/discourse</code></td><td>Discourse signs with it (HMAC-SHA256)</td></tr>
-  <tr><td><code>DISCORD_WEBHOOK_SECRET</code></td><td><code>POST /hooks/discord</code></td><td>Header <code>X-Powercordkit-Secret</code></td></tr>
-  <tr><td><code>FORUM_WEBHOOK_SECRET</code> (optional)</td><td><code>POST /hooks/:name</code></td><td>Header <code>X-Forum-Secret</code> (falls back to Discord secret)</td></tr>
-  <tr><td><code>MOD_API_KEY</code> (recommended)</td><td>all <code>/api/*</code> except <code>/health</code></td><td>Header <code>X-Mod-Key</code> — browser UIs prompt once per session</td></tr></table>
-  <pre><button class="copy">Copy</button># generate a secret (run 3x, or once per secret):
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-# store them (Wrangler prompts securely — never paste secrets into chat/logs):
-npx wrangler secret put DISCOURSE_WEBHOOK_SECRET --config wrangler.community.jsonc
-npx wrangler secret put DISCORD_WEBHOOK_SECRET --config wrangler.community.jsonc</pre>
-  <div class="warn">Use <b>fresh secrets per community</b> — never reuse one inbox's secrets on another. Save them in a password manager; you'll paste them into Discourse/Discord below.</div>
+  <tr><td><code>FORUM_WEBHOOK_SECRET</code> (optional)</td><td><code>POST /hooks/:name</code></td><td>Header <code>X-Forum-Secret</code> (falls back to the Discord secret)</td></tr>
+  <tr><td><code>MOD_API_KEY</code> (optional)</td><td>all <code>/api/*</code></td><td>Fallback shared key (<code>X-Mod-Key</code>) for scripts and the workers.dev origin, if you'd rather not use Discord login</td></tr>
+  <tr><td><code>DISCORD_IDEA_ROLE_IDS</code> (optional)</td><td>“Save as Idea”</td><td>Roles allowed to save ideas; defaults to <code>DISCORD_MOD_ROLE_IDS</code></td></tr>
+  <tr><td><code>DISCORD_COMPLETE_TAG</code> (optional)</td><td>Complete action</td><td>Forum tag to apply on complete; defaults to <code>Completed</code></td></tr>
+  <tr><td><code>ACCESS_TEAM_DOMAIN</code>, <code>ACCESS_AUD</code> (optional)</td><td>Cloudflare Access login</td><td>Alternative to Discord login (see §7)</td></tr></table>
+  <pre><button class="copy">Copy</button># example: store the two webhook secrets
+npx wrangler secret put DISCORD_WEBHOOK_SECRET --config wrangler.community.jsonc
+npx wrangler secret put DISCOURSE_WEBHOOK_SECRET --config wrangler.community.jsonc</pre>
+  <div class="warn">Use <b>fresh secrets per community</b> — never reuse one inbox's secrets on another. Save them in a password manager; you'll paste them into Discord/Discourse below.</div>
 
   <h2 id="s5"><span class="n">5</span>Deploy</h2>
   <pre><button class="copy">Copy</button>npm run deploy:community
@@ -87,44 +97,66 @@ curl https://&lt;your-worker&gt;.workers.dev/api/health   # expect {"ok":true,"e
   <pre><button class="copy">Copy</button>"routes": [{ "pattern": "mail.your-domain.com/*", "zone_name": "your-domain.com" }]</pre>
   <p>Then add DNS: <code>CNAME mail → &lt;worker&gt;.workers.dev</code>, proxied ON. If the zone lives elsewhere, point a proxied CNAME at the workers.dev hostname instead — the Worker answers on both.</p>
 
-  <h2 id="s7"><span class="n">7</span>Connect Discourse</h2>
-  <p>Discourse Admin → API → Webhooks → New:</p>
-  <ul><li>URL: <code>POST https://&lt;your-host&gt;/hooks/discourse</code></li><li>Events: <code>post_created</code>, <code>topic_created</code> — categories: your support + ideas categories</li><li>Secret: paste <code>DISCOURSE_WEBHOOK_SECRET</code> (Discourse sends <code>X-Discourse-Event-Signature: sha256=&lt;hmac&gt;</code>; the Worker verifies with a timing-safe compare, 401 otherwise)</li></ul>
-  <p>Test: create a forum post, then <code>GET /api/inbox?server=discourse</code> — it should appear with <code>src: "discourse"</code>.</p>
+  <h2 id="s7"><span class="n">7</span>Mod access — Discord login</h2>
+  <p>By default the inbox is locked. Mods log in with Discord; a signed cookie keeps them in for 30 days. Anyone without an allowed role is refused. Nothing shared to type.</p>
+  <ol>
+    <li>Discord Developer Portal → your app → <b>OAuth2</b>: add redirect URI <code>https://&lt;your-host&gt;/api/auth/callback</code>. Copy the <b>Client ID</b> and <b>Client Secret</b>.</li>
+    <li>Set <code>DISCORD_CLIENT_ID</code>, <code>DISCORD_CLIENT_SECRET</code>, a random <code>SESSION_SECRET</code>, <code>DISCORD_GUILD_ID</code>, and <code>DISCORD_MOD_ROLE_IDS</code> (comma-separated role IDs).</li>
+    <li>Redeploy. Visit <code>/mail/</code> — it bounces to Discord, then lands you in the inbox if you hold one of the roles.</li>
+  </ol>
+  <p>Routes: <code>GET /api/auth/login</code> (start), <code>GET /api/auth/callback</code> (return), <code>GET /api/auth/logout</code>, <code>GET /api/auth/me</code>. OAuth scopes used: <code>identify</code> + <code>guilds.members.read</code>.</p>
+  <div class="note"><b>Alternative — Cloudflare Access.</b> If you'd rather gate the host with an identity provider (Google, email PIN, SAML/OIDC) instead of Discord, create an Access app for the host and set <code>ACCESS_TEAM_DOMAIN</code> + <code>ACCESS_AUD</code>. The Worker verifies the Access JWT. The two methods can coexist.</div>
+  <div class="note"><b>Shared-key fallback.</b> Set <code>MOD_API_KEY</code> to also accept <code>X-Mod-Key</code> (handy for scripts and the workers.dev origin). All three methods are checked; either one grants access.</div>
 
-  <h2 id="s8"><span class="n">8</span>Connect Discord</h2>
-  <p>Your bot (or a context-menu command "Mail to Inbox") POSTs JSON:</p>
+  <h2 id="s8"><span class="n">8</span>Connect Discord (webhooks)</h2>
+  <p>For instant capture (or custom bots), POST JSON to <code>/hooks/discord</code>:</p>
   <pre><button class="copy">Copy</button>curl -X POST https://&lt;your-host&gt;/hooks/discord \
   -H 'Content-Type: application/json' \
   -H 'X-Powercordkit-Secret: &lt;DISCORD_WEBHOOK_SECRET&gt;' \
   -d '{"server":"main","type":"ticket","title":"Spam in #help",
        "content":"User @x posting invites (thread #ticket-128)",
        "author":"mod_bot","by":"auto-capture","url":"https://discord.com/channels/…"}'</pre>
-  <p>Fields: <code>server</code> (default <code>general</code>, configurable via <code>DEFAULT_SERVER</code>), <code>type</code> (<code>idea|support|ticket|mailed</code>), <code>title*</code>, <code>content</code>, <code>author</code>, <code>by</code>, <code>url</code> (jump link), <code>prio</code>. Missing/wrong secret → 401. Auto-capture: call it on <code>MESSAGE_CREATE</code> (ideas channel), <code>THREAD_CREATE</code> (ticket threads).</p>
-  <p><b>Multiple servers:</b> no configuration needed — any <code>server</code> value is accepted and <code>GET /api/servers</code> derives the live registry (with per-type counts) from inbox data; the inbox UI builds its filters from it. To scope a bot to one server, mint a per-server token (admin auth = global <code>X-Powercordkit-Secret</code>; shown once, store it):</p>
-  <pre><button class="copy">Copy</button>curl -X POST https://&lt;your-host&gt;/api/servers/my-server/token \
-  -H 'X-Powercordkit-Secret: &lt;DISCORD_WEBHOOK_SECRET&gt;' \
-  -H 'X-Mod-Key: &lt;MOD_API_KEY&gt;'
-# → {"ok":true,"server":"my-server","token":"…"}
-# bots then send -H 'X-Server-Token: …' instead of the global secret.
-# revoke: curl -X DELETE …/api/servers/my-server/token -H 'X-Powercordkit-Secret: …' -H 'X-Mod-Key: …'</pre>
+  <p>Fields: <code>server</code> (default <code>general</code>, or <code>DEFAULT_SERVER</code>), <code>type</code> (<code>idea|support|ticket|mailed</code>), <code>title*</code>, <code>content</code>, <code>author</code>, <code>by</code>, <code>url</code>, <code>prio</code>. The Discord and Discourse webhooks accept up to <b>20000</b> chars of content; the poller and forum adapters cap at 4000. Missing/wrong auth → 401; body over 256&nbsp;KB → 413; bad JSON → 400.</p>
+
+  <h2 id="s9"><span class="n">9</span>Connect Discourse</h2>
+  <p>Discourse Admin → API → Webhooks → New:</p>
+  <ul><li>URL: <code>POST https://&lt;your-host&gt;/hooks/discourse</code></li><li>Events: <code>post_created</code>, <code>topic_created</code> — categories: your support + ideas categories</li><li>Secret: paste <code>DISCOURSE_WEBHOOK_SECRET</code> (Discourse sends <code>X-Discourse-Event-Signature: sha256=&lt;hmac&gt;</code>; the Worker verifies with a timing-safe compare, 401 otherwise)</li></ul>
+  <p>Test: create a forum post, then <code>GET /api/inbox?server=&lt;your-forum-slug&gt;</code> — it should appear with <code>src: "discourse"</code>.</p>
+
+  <h2 id="s10"><span class="n">10</span>Other forums (NodeBB, Flarum, Lemmy, custom)</h2>
+  <pre><button class="copy">Copy</button>curl -X POST https://&lt;your-host&gt;/hooks/nodebb \
+  -H 'Content-Type: application/json' \
+  -H 'X-Forum-Secret: &lt;FORUM_WEBHOOK_SECRET&gt;' \
+  -d '{"server":"my-forum","type":"support","title":"Login broken",
+       "content":"(max 4000 chars, truncated server-side)","author":"user1"}'</pre>
+  <p>Unknown adapter names → 404. To add a forum permanently, extend <code>FORUM_ADAPTERS</code> in <code>src/index.ts</code> — no other changes needed.</p>
+
+  <h2 id="ideas"><span class="n">★</span>“Save as Idea” — message context menu</h2>
+  <p>Right-click any message → <b>Apps → Save as Idea</b> files it into the inbox as an <code>idea</code>. It's a Discord message command, handled at <code>POST /hooks/discord-interactions</code> (Ed25519-verified with <code>DISCORD_PUBLIC_KEY</code>).</p>
+  <ol>
+    <li>Set <code>DISCORD_PUBLIC_KEY</code> (App → General Information → Public Key).</li>
+    <li>Developer Portal → App → <b>Interactions Endpoint URL</b> = <code>https://&lt;your-host&gt;/hooks/discord-interactions</code> → Save (Discord sends a PING; the Worker replies PONG).</li>
+    <li>Register the command: <code>POST /api/admin/register-commands</code> (auth with your mod session or <code>X-Mod-Key</code>). It creates a guild command for instant availability.</li>
+  </ol>
+  <p>Who can submit: any member holding a role in <code>DISCORD_IDEA_ROLE_IDS</code> (defaults to <code>DISCORD_MOD_ROLE_IDS</code>); others get a “no permission” reply. The app must be authorized with the <code>applications.commands</code> scope in the guild (re-invite with <code>scope=bot applications.commands</code> if the command doesn't appear).</p>
 
   <h2 id="bot"><span class="n">★</span>Bot integration: reading channels</h2>
-  <p><b>Option A — Cloudflare poller, no hosting (recommended).</b> The Worker itself polls your channels every 2 minutes via the Discord REST API and mails new items straight into D1 — no server, no bot process. One human step: create a Discord app, invite its bot with <b>View Channel + Read Message History</b> on the watched channels, then store its token with <code>wrangler secret put DISCORD_BOT_TOKEN --config wrangler.community.jsonc</code>. Feeds + schedule live in the community config (<code>FEED_MAP</code>, <code>*/2 * * * *</code>); progress (last message IDs, seen threads) is tracked in D1 automatically. ~2 min delay instead of instant — the tradeoff for zero hosting.</p>
-  <p><b>Option B — self-hosted bot (instant).</b> Below is the complete recipe for a TEP-style setup: two guilds, four watched channels, one inbox. Adapt the IDs to yours.</p>
+  <p><b>Option A — Cloudflare poller, no hosting (recommended).</b> The Worker itself polls your channels every 2 minutes via the Discord REST API and mails new items straight into D1 — no server, no bot process. It reads: guild <b>active threads</b>, <b>archived public</b> threads, and <b>archived private</b> threads (tickets), plus plain channel messages; it resolves <code>@user</code>/<code>@role</code>/<code>#channel</code> mentions to names, and pulls each post's real author (the first human message for tickets). One human step: create a Discord app, invite its bot with <b>View Channel + Read Message History + Manage Threads</b> on the watched channels, then <code>npx wrangler secret put DISCORD_BOT_TOKEN --config wrangler.community.jsonc</code>. Feeds + schedule live in the community config (<code>FEED_MAP</code>, <code>*/2 * * * *</code>); progress (last message IDs, seen threads) is tracked in D1. New threads are capped at 25/tick. ~2 min delay — the tradeoff for zero hosting.</p>
+  <p>Backfill/repair any items that predate a config change: <code>POST /api/admin/backfill-threads?limit=12</code> (repeat until <code>remaining</code> is 0).</p>
+  <p><b>Option B — self-hosted bot (instant).</b> A tiny discord.js bot POSTs to <code>/hooks/discord</code> as events happen.</p>
   <p><b>1. Portal setup</b> — <a href="https://discord.com/developers/applications">discord.com/developers/applications</a> → your app → Bot: enable <b>Message Content Intent</b> (privileged), copy the bot token. Invite the bot with <code>applications.commands</code> + <code>View Channel</code>, <code>Read Message History</code> on the watched channels.</p>
-  <p><b>2. Events to subscribe</b> (discord.js v14 names):</p>
-  <table><tr><th>Guild</th><th>Event</th><th>Filter</th><th>Mail as</th></tr>
-  <tr><td>The East Pacific</td><td><code>threadCreate</code></td><td><code>thread.parentId</code> is <code>894920335139409983</code> (report-a-concern) or <code>1114601767724920893</code> (support-desk forum)</td><td>tickets vs <code>type:"support"</code>, title = post name</td></tr>
-  <tr><td>TEP Urth</td><td><code>messageCreate</code></td><td>channel <code>511665989210079252</code> (staffing) or <code>1252432781653315634</code> (administration), ignore bots</td><td><code>type:"ticket"</code></td></tr></table>
-  <p><b>3. Minimal bot</b> (Node 22+, save as <code>bot.cjs</code>, run <code>npm i discord.js@14</code> — intents: <code>Guilds</code> + <code>GuildMessages</code> + <code>MessageContent</code>):</p>
+  <p><b>2. Minimal bot</b> (Node 22+, save as <code>bot.cjs</code>, run <code>npm i discord.js@14</code> — intents: <code>Guilds</code> + <code>GuildMessages</code> + <code>MessageContent</code>):</p>
   <pre><button class="copy">Copy</button>const { Client, GatewayIntentBits } = require('discord.js');
-const HOST = 'https://mod.tep.one'; // your inbox host
-const TOKENS = {
-  'the-east-pacific': process.env.TOKEN_TEP,   // X-Server-Token per guild
-  'tep-urth': process.env.TOKEN_URTH,
+const HOST = 'https://mail.example.com';           // your inbox host
+const TOKENS = {                                   // server slug -> X-Server-Token
+  main: process.env.TOKEN_MAIN,
+  'server-two': process.env.TOKEN_TWO,
 };
-const seen = new Set(); // in-memory dedupe (threadCreate fires once; messages: skip seen ids)
+// watched forum parents -> mail type ("ticket" or "support")
+const FORUMS = { '<forum-channel-id-a>': 'ticket', '<forum-channel-id-b>': 'support' };
+// watched text channels -> server slug
+const CHANNELS = { '<ticket-channel-id>': 'server-two' };
+const jump = (g, c, t) => `https://discord.com/channels/${g}/${t ?? c}`;
 async function mail(server, payload) {
   const r = await fetch(HOST + '/hooks/discord', {
     method: 'POST',
@@ -133,78 +165,55 @@ async function mail(server, payload) {
   });
   if (!r.ok) console.error('mail failed', server, r.status, await r.text());
 }
-const jump = (g, c, t) =&gt; `https://discord.com/channels/${g}/${t ?? c}`;
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
-client.on('threadCreate', (th) =&gt; {
-  if (th.guildId !== '633351482128728064') return;
-  // report-a-concern → ticket, support-desk forum → support
-  const kind = th.parentId === '894920335139409983' ? 'ticket'
-    : th.parentId === '1114601767724920893' ? 'support' : null;
+client.on('threadCreate', (th) => {
+  const kind = FORUMS[th.parentId];
   if (!kind) return;
-  mail('the-east-pacific', { type: kind, title: (kind === 'support' ? 'Post: ' : 'Thread: ') + th.name.slice(0, 80),
-    content: `New ${kind === 'support' ? 'support post' : 'concern thread'} by ${th.ownerId ?? 'unknown'}`, author: th.ownerId ?? 'unknown',
+  mail('main', { type: kind, title: th.name.slice(0, 80),
+    content: `New ${kind} by ${th.ownerId ?? 'unknown'}`, author: th.ownerId ?? 'unknown',
     url: jump(th.guildId, th.parentId, th.id) });
 });
-client.on('messageCreate', (m) =&gt; {
+const seen = new Set();
+client.on('messageCreate', (m) => {
   if (m.author.bot || seen.has(m.id)) return; seen.add(m.id);
-  if (m.guildId === '508790398873894915' &amp;&amp; ['511665989210079252', '1252432781653315634'].includes(m.channelId))
-    mail('tep-urth', { type: 'ticket', title: m.content.slice(0, 80) || '(attachment)', content: m.content.slice(0, 4000),
-      author: m.author.tag, url: jump(m.guildId, m.channelId, m.id) });
+  const server = CHANNELS[m.channelId];
+  if (!server) return;
+  mail(server, { type: 'ticket', title: m.content.slice(0, 80) || '(attachment)',
+    content: m.content.slice(0, 4000), author: m.author.tag,
+    url: jump(m.guildId, m.channelId, m.id) });
 });
 client.login(process.env.DISCORD_BOT_TOKEN);</pre>
-  <p><b>Run it:</b></p>
-  <pre><button class="copy">Copy</button>set DISCORD_BOT_TOKEN=… &amp;&amp; set TOKEN_TEP=… &amp;&amp; set TOKEN_URTH=… &amp;&amp; node bot.cjs
-# keep it alive (one option): npm i -g pm2 &amp;&amp; pm2 start bot.cjs --name modmail &amp;&amp; pm2 save</pre>
-  <p>Use the two <code>X-Server-Token</code> values from your handoff pack for <code>TOKEN_TEP</code> / <code>TOKEN_URTH</code>. Then create a test post in <code>support-desk</code> — it should appear in the inbox within seconds (archive it after).</p>
-  <div class="note"><b>Notes for your bot dev:</b> keep <code>seen</code> bounded in production (e.g. an LRU of the last 5k IDs — restarts re-send nothing because <code>messageCreate</code> only fires live). Set <code>prio:"high"</code> when a message mentions <code>@everyone/@here</code> or matches an invite-link regex. Attachments: put <code>m.attachments.first()?.url</code> into <code>content</code> (or <code>url</code> if there's no thread link). The inbox truncates safely (title 300, content 20000) — oversize payloads get 413 past 256KB, bad JSON gets 400, wrong token gets 401.</div>
-  <p><b>4. Verify without a bot</b> — copy the curl shape from §8 with your real IDs and one server's <code>X-Server-Token</code>, then check <code>GET /api/inbox?server=the-east-pacific</code> (with <code>X-Mod-Key</code>). Archive the test from the inbox UI when done.</p>
+  <p><b>Run it:</b> <code>set DISCORD_BOT_TOKEN=… &amp;&amp; set TOKEN_MAIN=… &amp;&amp; set TOKEN_TWO=… &amp;&amp; node bot.cjs</code>. Keep it alive with a process manager (<code>pm2</code>, systemd, a container).</p>
+  <p><b>3. Verify without a bot</b> — copy the curl shape from §8 with your real IDs and one server's <code>X-Server-Token</code>, then check <code>GET /api/inbox?server=&lt;your-server&gt;</code> (with <code>X-Mod-Key</code>). Archive the test from the inbox when done.</p>
+  <div class="note"><b>Notes for the bot dev:</b> keep <code>seen</code> bounded in production (an LRU of the last 5k IDs). Set <code>prio:"high"</code> when a message mentions <code>@everyone/@here</code> or matches an invite-link regex. Attachments: put <code>m.attachments.first()?.url</code> into <code>content</code>. The inbox truncates safely (title 300, content 4000 for poller items / 20000 for webhooks).</div>
 
-  <p><b>Option C — BotGhost (no code, no hosting).</b> Step by step, per feed (do it 4 times — once per row below):</p>
-  <ol>
-  <li>Dashboard → your bot → <b>invite it</b> to the Discord server if it isn't there (Modules → <i>Invite Your Bot</i>).</li>
-  <li>Go to <b>Custom Events</b> → click the yellow <b>Custom Event Builder</b> block → pick the trigger: <b>“When a thread is created”</b> (Thread Events) for the two forum channels (<code>report-a-concern</code>, <code>support-desk</code>), <b>“When a new message is sent”</b> (Message Events) for <code>staffing</code> / <code>administration</code>. Name it, e.g. <code>mail-support-desk</code>.</li>
-  <li>Add a <b>Channel Condition</b> block first: for thread events, condition on the <b>parent</b> channel ID (<code>894920335139409983</code> or <code>1114601767724920893</code>); for message events, channel IS exactly the channel ID. This stops other channels leaking into the inbox.</li>
-  <li>Optionally add a <b>User Condition</b> so the bot ignores its own/other bots' messages (<code>{isBot}</code> is false) — prevents loops.</li>
-  <li>Add action → <b>Send an API Request</b> → open the <b>Request Builder</b>:
-    <ul><li>URL: <code>https://mod.tep.one/hooks/discord</code> (your host), type <b>POST</b>.</li>
-    <li><b>HTTP Headers</b> → Add: key <code>X-Server-Token</code>, value = that feed's server token from your handoff pack.</li>
-    <li><b>Request Body</b> → switch to <b>Raw JSON Body</b> → paste the JSON for your feed (table below). For every <code>{…}</code> value, click it and pick the real variable from the <b>clipboard icon</b> (variable list) — e.g. message text is under the <code>Message</code> object (<code>{Message.content}</code>), author under <code>{Message.author.tag}</code>, IDs under <code>{Message.id}</code> / <code>{channel_id}</code> / <code>{server_id}</code>; thread events expose the thread object the same way.</li>
-    <li>Tick <b>Replace variables in Request Body</b>, then <b>Test Request</b> — expect status 200/201. Check the inbox, archive the test.</li></ul></li>
-  </ol>
-  <table><tr><th>Feed</th><th>Event + condition</th><th>Raw JSON body</th></tr>
-  <tr><td>support-desk (forum) → support</td><td>thread created, parent <code>1114601767724920893</code></td><td><code>{"server":"the-east-pacific","type":"support","title":"{thread name}","content":"{first post text}","author":"{thread owner}","by":"botghost","url":"https://discord.com/channels/{server_id}/{thread id}"}</code></td></tr>
-  <tr><td>report-a-concern → ticket</td><td>thread created, parent <code>894920335139409983</code></td><td><code>{"server":"the-east-pacific","type":"ticket","title":"Thread: {thread name}","content":"New concern thread","author":"{thread owner}","by":"botghost","url":"https://discord.com/channels/{server_id}/{thread id}"}</code></td></tr>
-  <tr><td>staffing / administration → ticket</td><td>message sent, channel <code>511665989210079252</code> (then duplicate the event for <code>1252432781653315634</code>)</td><td><code>{"server":"tep-urth","type":"ticket","title":"{Message.content, first 80 chars}","content":"{Message.content}","author":"{Message.author.tag}","by":"botghost","url":"https://discord.com/channels/{server_id}/{channel_id}/{Message.id}"}</code></td></tr></table>
-  <p>Trim titles yourself if needed: our inbox caps title at 300 chars and content at 20000, but a clean <code>title</code> (first ~80 chars) triages faster. A 401 means the <code>X-Server-Token</code> is wrong; 400 means malformed JSON (check Test Request output).</p>
-  <div class="warn">Two caveats: custom events / API actions may require a paid BotGhost plan — if a block is locked, that's why. And BotGhost owns your delivery path, so keep the Cloudflare poller (Option A) as the fallback either way.</div>
-
-  <h2 id="s9"><span class="n">9</span>Other forums (NodeBB, Flarum, Lemmy, custom)</h2>
-  <pre><button class="copy">Copy</button>curl -X POST https://&lt;your-host&gt;/hooks/nodebb \
-  -H 'Content-Type: application/json' \
-  -H 'X-Forum-Secret: &lt;FORUM_WEBHOOK_SECRET&gt;' \
-  -d '{"server":"my-forum","type":"support","title":"Login broken",
-       "content":"(max 4000 chars, truncated server-side)","author":"user1"}'</pre>
-  <p>Unknown adapter names → 404. To add a forum permanently, extend <code>FORUM_ADAPTERS</code> in <code>src/index.ts</code> — no other changes needed.</p>
+  <h2 id="roadmap"><span class="n">★</span>Roadmap</h2>
+  <p>Promote an idea to the public roadmap with a status (<code>planned</code> / <code>in-progress</code> / <code>shipped</code>) and an optional target date. Manage it from the inbox item detail, or:</p>
+  <pre><button class="copy">Copy</button>curl -X POST https://&lt;your-host&gt;/api/inbox/&lt;item-id&gt;/roadmap \
+  -H 'X-Mod-Key: &lt;MOD_API_KEY&gt;' -H 'Content-Type: application/json' \
+  -d '{"status":"in-progress","date":"2026-01-31"}'</pre>
+  <p><code>GET /api/roadmap</code> is public (read-only) and powers the <code>/roadmap/</code> page (Planned / In Progress / Shipped). Set <code>{"roadmap":false}</code> to remove an item.</p>
 
   <h2 id="servers"><span class="n">★</span>How mail works across multiple servers</h2>
   <p>One inbox watches many Discord servers (guilds) plus forums. The model is deliberately simple:</p>
-  <ul><li><b>Open registry, no pre-registration.</b> Every mailed item carries a <code>server</code> string (e.g. a guild slug). The first mail from a new server creates it — <code>GET /api/servers</code> derives the live registry (with open counts and per-type breakdowns) straight from the data, and the inbox filter bar renders from it. Zero config per server.</li><li><b>Scoped credentials.</b> Set <code>DEFAULT_SERVER</code> per deployment for items mailed without a server. Bots authenticate per server: mint a token with <code>POST /api/servers/:id/token</code> (admin: global <code>X-Powercordkit-Secret</code>) and send it as <code>X-Server-Token</code> — only that server's mail is accepted with it. Rotate with POST again, revoke with <code>DELETE /api/servers/:id/token</code>. Tokens are SHA-256 hashed in D1; the plaintext shows once.</li><li><b>Per-server bot wiring.</b> Run one bot (or one webhook config) per guild; each posts with its own <code>server</code> + token. Suggested mapping: guild slug → <code>server</code>, <code>#ideas</code> → <code>type=idea</code>, support channels → <code>type=support</code>, ticket threads → <code>type=ticket</code>.</li><li><b>Lock indicators.</b> Servers with a token row show 🔒 in the inbox filter — at a glance you see which feeds are credential-scoped.</li></ul>
-  <div class="note">Scaling: the inbox caps reads at 200 items per query and the daily cron purges items older than 90 days — one deployment comfortably covers a community with several busy servers.</div>
+  <ul><li><b>Open registry, no pre-registration.</b> Every mailed item carries a <code>server</code> string (e.g. a guild slug). The first mail from a new server creates it — <code>GET /api/servers</code> derives the live registry (open counts + per-type breakdowns) from the data, and the inbox filter bar renders from it.</li><li><b>Scoped credentials.</b> Set <code>DEFAULT_SERVER</code> per deployment for items mailed without a server. Bots authenticate per server: mint a token with <code>POST /api/servers/:id/token</code> (admin: global <code>X-Powercordkit-Secret</code>) and send it as <code>X-Server-Token</code> — only that server's mail is accepted with it. Rotate with POST again, revoke with <code>DELETE /api/servers/:id/token</code>. Tokens are SHA-256 hashed in D1; the plaintext shows once.</li><li><b>Lock indicators.</b> Servers with a token row show 🔒 in the inbox filter.</li></ul>
+  <div class="note">Working an item: <b>E</b> completes it — the inbox tags it <code>Completed</code> and (for Discord threads) applies the forum's <code>Completed</code> tag and archives+locks the thread; <b>Reopen</b> reverses it. Assignment and private notes are silent (inbox-only). Reads cap at 200 items per query; a daily cron (<code>0 3 * * *</code>) purges items older than 90 days.</div>
 
-  <h2 id="s10"><span class="n">10</span>Operate &amp; troubleshoot</h2>
+  <h2 id="s11"><span class="n">11</span>Operate &amp; troubleshoot</h2>
   <table><tr><th>Symptom</th><th>Fix</th></tr>
   <tr><td>401 on webhooks</td><td>Wrong secret or header name — compare against <code>wrangler secret list --config …</code> (values aren't shown; re-<code>put</code> to rotate)</td></tr>
-  <tr><td>Empty inbox, API ok</td><td>Check D1 has tables (<code>d1 execute … "SELECT * FROM inbox_items LIMIT 1"</code>); re-run migrate</td></tr>
-  <tr><td>Custom domain doesn't resolve</td><td>CNAME name must be exactly the subdomain (e.g. <code>mail</code>, not the full hostname), proxied ON; wait for DNS propagation</td></tr>
-  <tr><td>Old items pile up</td><td>Daily cron (<code>0 3 * * *</code>) purges items + notes older than 90 days automatically</td></tr>
+  <tr><td>Stuck on Discord login / <code>?denied=role</code></td><td>The account lacks a role in <code>DISCORD_MOD_ROLE_IDS</code>, or isn't in <code>DISCORD_GUILD_ID</code>. Check the redirect URI matches exactly.</td></tr>
+  <tr><td>No new posts appear (poller)</td><td>Bot missing <b>View Channel / Read Message History / Manage Threads</b>, or the feed isn't in <code>FEED_MAP</code>. Empty message content ⇒ enable <b>Message Content Intent</b>. Private ticket threads need Manage Threads.</td></tr>
+  <tr><td>Empty inbox, API ok</td><td>Check D1 has tables (<code>d1 execute … "SELECT * FROM inbox_items LIMIT 1"</code>); re-run migrations</td></tr>
+  <tr><td>Custom domain doesn't resolve</td><td>CNAME name must be exactly the subdomain (e.g. <code>mail</code>), proxied ON; wait for DNS propagation</td></tr>
   <tr><td>Need logs</td><td><code>npx wrangler tail --config wrangler.community.jsonc</code> — structured JSON logs</td></tr></table>
   <p>Cost: comfortably inside Cloudflare's free tier for community-sized Discords (Workers + D1 + tiny static assets).</p>
 
   <h2 id="tools-only"><span class="n">★</span>Just want the tools? Self-host the toolset</h2>
   <p>The labs (Embed, Color, Markdown, Timestamp, Snowflake, Webhook, Slowmode) are backend-free. Anyone can run their own copy — on this site, or theirs:</p>
-  <ul><li><b>Use them here</b> — every lab on this site is free to use as-is.</li><li><b>Embed a lab</b> — paste this where you want it (replace the host):<br/><code>&lt;iframe src="https://&lt;host&gt;/embeds/" width="100%" height="700" style="border:0;border-radius:12px" title="PowerCordKit Embed Lab"&gt;&lt;/iframe&gt;</code></li><li><b>Host your own toolset</b> — from the repo:<pre><button class="copy">Copy</button>npm run build:tools       # → dist/tools/ (labs + this guide, no Mail backend)
-npm run deploy:tools      # Cloudflare Pages, then attach your domain
-# …or push to main: the GitHub Pages workflow publishes the labs</pre></li></ul>
+  <ul><li><b>Use them here</b> — every lab on this site is free to use as-is.</li><li><b>Embed a lab</b> — paste this where you want it (replace the host):<br/><code>&lt;iframe src="https://&lt;host&gt;/embeds/" width="100%" height="700" style="border:0;border-radius:12px" title="Embed Lab"&gt;&lt;/iframe&gt;</code></li><li><b>Host your own toolset</b> — from the repo:<pre><button class="copy">Copy</button>npm run build:tools       # → dist/tools/ (labs + this guide, no Mail backend)
+npm run deploy:tools      # Cloudflare Worker, then attach your domain</pre></li></ul>
+  <p>Customize the header, links and accent in <code>public/site.config.json</code>. You can turn the setup guide link off with <code>"features": { "mailSetup": false }</code>.</p>
   <div class="note">One condition (<code>LICENSE.md</code>, MIT + credit): keep the <b>“Powered by PowerCordKit”</b> footer credit and link back on any copy, embed, or self-hosted toolset. Removing the credit while keeping the code isn't permitted.</div>
   <p><a href="/">← Back to tools</a> · <a href="/mail/">Mail overview</a></p>
 </div>
