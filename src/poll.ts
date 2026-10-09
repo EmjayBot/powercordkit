@@ -111,6 +111,54 @@ export function resolveMentions(
     .replace(/<a?:(\w+):\d+>/g, ':$1:');
 }
 
+// Apply or remove a forum tag on a Discord thread (PATCH /channels/{id}).
+// Requires Manage Threads. Best-effort: returns a reason instead of throwing.
+export async function setForumTag(
+  token: string,
+  threadId: string,
+  tagName: string,
+  remove = false,
+  fetchFn: typeof fetch = fetch,
+  log: Logger = noopLog,
+): Promise<{ ok: boolean; tag?: string; reason?: string; tags?: string[] }> {
+  const base = 'https://discord.com/api/v10';
+  const auth = { Authorization: 'Bot ' + token };
+  const get = async (p: string): Promise<any> => {
+    const r = await fetchFn(base + p, { headers: auth });
+    if (!r.ok) return null;
+    try {
+      return await r.json();
+    } catch {
+      return null;
+    }
+  };
+  const th = await get(`/channels/${threadId}`);
+  if (!th || !th.parent_id) return { ok: false, reason: 'not-a-forum-thread' };
+  const parent = await get(`/channels/${th.parent_id}`);
+  const tags: { id: string; name: string }[] = parent?.available_tags ?? [];
+  if (!tags.length) return { ok: false, reason: 'no-forum-tags' };
+  const want = tagName.toLowerCase();
+  const keys = ['complete', 'completed', 'resolved', 'closed', 'done'];
+  const match =
+    tags.find((t) => t.name.toLowerCase() === want) ??
+    tags.find((t) => keys.some((k) => t.name.toLowerCase().includes(k)));
+  if (!match) return { ok: false, reason: 'no-matching-tag', tags: tags.map((t) => t.name) };
+  const current: string[] = th.applied_tags ?? [];
+  const next = remove
+    ? current.filter((id) => id !== match.id)
+    : Array.from(new Set([...current, match.id]));
+  const r = await fetchFn(base + `/channels/${threadId}`, {
+    method: 'PATCH',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ applied_tags: next }),
+  });
+  if (!r.ok) {
+    log('warn', 'apply forum tag failed', { status: r.status, thread: threadId });
+    return { ok: false, reason: 'patch-' + r.status };
+  }
+  return { ok: true, tag: match.name };
+}
+
 const newer = (a: string, b: string): boolean => {
   try {
     return BigInt(a) > BigInt(b);

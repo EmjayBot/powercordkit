@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { pollDiscord, backfillDiscordThreads } from './poll';
+import { pollDiscord, backfillDiscordThreads, setForumTag } from './poll';
 import { verifyAccessJwt } from './access';
 import {
   discordLoginUrl,
@@ -34,6 +34,7 @@ type Bindings = {
   DISCORD_GUILD_ID?: string;
   DISCORD_MOD_ROLE_ID?: string;
   DISCORD_MOD_ROLE_IDS?: string;
+  DISCORD_COMPLETE_TAG?: string;
   SESSION_SECRET?: string;
   DISCORD_BOT_TOKEN?: string;
   FEED_MAP?: string;
@@ -259,6 +260,30 @@ async function requireAdminKey(env: Bindings, headers: Headers): Promise<boolean
   if (!s) return true;
   const given = headers.get('X-Powercordkit-Secret') ?? '';
   return timingSafeEqualString(given, s);
+}
+
+// Mirror complete/reopen onto the Discord forum thread's tags (best effort).
+async function syncDiscordTag(env: Bindings, id: string, remove: boolean): Promise<unknown> {
+  try {
+    if (!env.DISCORD_BOT_TOKEN) return { skipped: 'no-token' };
+    const row = await env.DB.prepare(`SELECT url, src FROM inbox_items WHERE id = ?`)
+      .bind(id)
+      .first<{ url: string; src: string }>();
+    if (!row || row.src !== 'discord' || !row.url) return { skipped: 'not-discord' };
+    const threadId = (row.url || '').split('/').pop() || '';
+    if (!/^\d+$/.test(threadId)) return { skipped: 'no-thread-id' };
+    return await setForumTag(
+      env.DISCORD_BOT_TOKEN,
+      threadId,
+      env.DISCORD_COMPLETE_TAG || 'Completed',
+      remove,
+      fetch,
+      (level, msg, extra) => jsonLog(level, msg, extra),
+    );
+  } catch (err) {
+    jsonLog('warn', 'sync discord tag failed', { error: String(err) });
+    return { error: String(err) };
+  }
 }
 
 async function verifyDiscourseSignature(  rawBody: string,
@@ -549,6 +574,7 @@ app.post('/api/inbox/:id/archive', async (c) => {
 });
 
 // Mark complete: tag it "Completed" and take it off the dashboard (archived).
+// Also applies the matching forum tag on the Discord thread, if any.
 app.post('/api/inbox/:id/complete', async (c) => {
   try {
     const id = c.req.param('id');
@@ -558,14 +584,15 @@ app.post('/api/inbox/:id/complete', async (c) => {
     if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
       return bad('item not found', 404);
     }
-    return c.json({ ok: true });
+    const discord = await syncDiscordTag(c.env, id, false);
+    return c.json({ ok: true, discord });
   } catch (err) {
     jsonLog('error', 'complete failed', { error: String(err) });
     return bad('Failed to complete', 500);
   }
 });
 
-// Reopen a completed item: back on the dashboard with its type as the tag.
+// Reopen a completed item: back on the dashboard; remove the Discord tag.
 app.post('/api/inbox/:id/reopen', async (c) => {
   try {
     const id = c.req.param('id');
@@ -575,7 +602,8 @@ app.post('/api/inbox/:id/reopen', async (c) => {
     if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
       return bad('item not found', 404);
     }
-    return c.json({ ok: true });
+    const discord = await syncDiscordTag(c.env, id, true);
+    return c.json({ ok: true, discord });
   } catch (err) {
     jsonLog('error', 'reopen failed', { error: String(err) });
     return bad('Failed to reopen', 500);
@@ -602,7 +630,7 @@ app.get('/api/admin/debug-channel', async (c) => {
   };
   return c.json({
     ok: true,
-    channel: { status: info.status, type: info.body?.type, name: info.body?.name, guild_id: guild, parent_id: info.body?.parent_id, tags: info.body?.available_tags?.length },
+    channel: { status: info.status, type: info.body?.type, name: info.body?.name, guild_id: guild, parent_id: info.body?.parent_id, tags: info.body?.available_tags?.map((t: { id: string; name: string }) => ({ id: t.id, name: t.name })) },
     channelActive: await summarize(`/channels/${ch}/threads/active`, 'threads'),
     archivedPublic: await summarize(`/channels/${ch}/threads/archived/public?limit=50`, 'threads'),
     archivedPrivate: await summarize(`/channels/${ch}/threads/archived/private?limit=50`, 'threads'),
