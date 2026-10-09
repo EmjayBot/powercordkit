@@ -638,38 +638,6 @@ app.post('/api/inbox/:id/reopen', async (c) => {
   }
 });
 
-// TEMP diagnostic: inspect a channel/forum and its threads.
-app.get('/api/admin/debug-channel', async (c) => {
-  const ch = c.req.query('channel') || '';
-  const token = c.env.DISCORD_BOT_TOKEN;
-  if (!token || !/^\d+$/.test(ch)) return bad('channel required', 400);
-  const g = async (p: string) => {
-    const r = await fetch('https://discord.com/api/v10' + p, { headers: { Authorization: 'Bot ' + token } });
-    let body: unknown = null;
-    try { body = await r.json(); } catch { /* ignore */ }
-    return { status: r.status, body };
-  };
-  const info = (await g(`/channels/${ch}`)) as { status: number; body: any };
-  const guild = info.body?.guild_id as string | undefined;
-  const summarize = async (p: string, key: string) => {
-    const r = (await g(p)) as { status: number; body: any };
-    const arr = Array.isArray(r.body) ? r.body : r.body?.[key];
-    return { status: r.status, count: Array.isArray(arr) ? arr.length : undefined, first: Array.isArray(arr) ? arr.slice(0, 3).map((x: any) => ({ id: x.id, name: x.name, type: x.type, parent_id: x.parent_id })) : r.body };
-  };
-  return c.json({
-    ok: true,
-    channel: { status: info.status, type: info.body?.type, name: info.body?.name, guild_id: guild, parent_id: info.body?.parent_id, tags: info.body?.available_tags?.map((t: { id: string; name: string }) => ({ id: t.id, name: t.name })) },
-    channelActive: await summarize(`/channels/${ch}/threads/active`, 'threads'),
-    archivedPublic: await summarize(`/channels/${ch}/threads/archived/public?limit=50`, 'threads'),
-    archivedPrivate: await summarize(`/channels/${ch}/threads/archived/private?limit=50`, 'threads'),
-    guildActiveForParent: guild ? await (async () => {
-      const r = (await g(`/guilds/${guild}/threads/active`)) as { status: number; body: any };
-      const th = Array.isArray(r.body?.threads) ? r.body.threads.filter((t: any) => t.parent_id === ch) : null;
-      return { status: r.status, matching: th ? th.length : undefined, first: th ? th.slice(0, 3).map((x: any) => ({ id: x.id, name: x.name })) : undefined };
-    })() : null,
-  });
-});
-
 // Enrich already-ingested poller thread items with real content/author/tags.
 // Bounded batch; call repeatedly until remaining = 0.
 app.post('/api/admin/backfill-threads', async (c) => {
