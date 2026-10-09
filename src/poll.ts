@@ -55,6 +55,7 @@ type DMsg = { id: string; content?: string; author?: { bot?: boolean; username?:
 type DThread = {
   id: string;
   name?: string;
+  parent_id?: string;
   owner_id?: string;
   thread_metadata?: { archived?: boolean; archive_timestamp?: string };
 };
@@ -141,8 +142,19 @@ export async function pollDiscord(
   for (const t of map.threads) {
     const seenIds = new Set<string>();
     const collected: DThread[] = [];
-    const active = (await api(`/channels/${t.parent}/threads/active`)) as { threads?: DThread[] } | null;
-    for (const th of active?.threads ?? []) {
+    // Active threads come from the guild-level endpoint: the channel-level
+    // /threads/active 404s on forum channels, so fresh (unarchived) posts would
+    // otherwise be missed until they archive. Fall back to channel-level if the
+    // guild call fails.
+    let active: DThread[] = [];
+    const guildActive = (await api(`/guilds/${t.guild}/threads/active`)) as { threads?: DThread[] } | null;
+    if (guildActive && Array.isArray(guildActive.threads)) {
+      active = guildActive.threads.filter((th) => th.parent_id === t.parent);
+    } else {
+      const channelActive = (await api(`/channels/${t.parent}/threads/active`)) as { threads?: DThread[] } | null;
+      active = channelActive?.threads ?? [];
+    }
+    for (const th of active) {
       if (!seenIds.has(th.id)) { seenIds.add(th.id); collected.push(th); }
     }
     let before: string | undefined;
@@ -167,7 +179,7 @@ export async function pollDiscord(
       kind: 'threads',
       server: t.server,
       parent: t.parent,
-      active: active && Array.isArray(active.threads) ? active.threads.length : 'error',
+      active: active.length,
       total: collected.length,
     });
     for (const th of collected) {

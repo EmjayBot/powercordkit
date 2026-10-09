@@ -34,7 +34,6 @@
     "PERSONAL_DOMAIN": "powercordkit.emjay.fyi",
     "COMMUNITY_DOMAIN": "mod.tep.one",
     "DEFAULT_SERVER": "tep.one",
-    "POLL_DEBUG": "1",
     "FEED_MAP": "{\"channels\":[{\"guild\":\"508790398873894915\",\"channel\":\"511665989210079252\",\"server\":\"tep-urth\",\"type\":\"ticket\"},{\"guild\":\"508790398873894915\",\"channel\":\"1252432781653315634\",\"server\":\"tep-urth\",\"type\":\"ticket\"}],\"threads\":[{\"guild\":\"633351482128728064\",\"parent\":\"894920335139409983\",\"server\":\"the-east-pacific\",\"type\":\"ticket\"},{\"guild\":\"633351482128728064\",\"parent\":\"1114601767724920893\",\"server\":\"the-east-pacific\",\"type\":\"support\"}]}"
   },
   "d1_databases": [
