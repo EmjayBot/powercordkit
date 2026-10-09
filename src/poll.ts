@@ -21,9 +21,13 @@ export type InboxInput = {
 // Minimal structural DB surface (D1Database satisfies this).
 export type PollDb = {
   prepare(query: string): {
+    first<T>(): Promise<T | null>;
+    run(): Promise<unknown>;
+    all<T>(): Promise<{ results?: T[] }>;
     bind(...args: unknown[]): {
       first<T>(): Promise<T | null>;
       run(): Promise<unknown>;
+      all<T>(): Promise<{ results?: T[] }>;
     };
   };
 };
@@ -57,8 +61,10 @@ type DThread = {
   name?: string;
   parent_id?: string;
   owner_id?: string;
+  applied_tags?: string[];
   thread_metadata?: { archived?: boolean; archive_timestamp?: string };
 };
+type DStarter = { content?: string; author?: { username?: string; global_name?: string } };
 
 const newer = (a: string, b: string): boolean => {
   try {
@@ -67,6 +73,82 @@ const newer = (a: string, b: string): boolean => {
     return a > b;
   }
 };
+
+export type DiscordApi = (path: string) => Promise<unknown>;
+
+// Shared Discord REST caller (bot auth). Returns null on any non-2xx so callers
+// can skip gracefully; 429/other errors are logged.
+export function makeDiscordApi(
+  token: string,
+  fetchFn: typeof fetch = fetch,
+  log: Logger = noopLog,
+): DiscordApi {
+  return async (path: string): Promise<unknown> => {
+    const r = await fetchFn('https://discord.com/api/v10' + path, {
+      headers: { Authorization: 'Bot ' + token },
+    });
+    if (r.status === 429) {
+      log('warn', 'discord rate-limited', { path });
+      return null;
+    }
+    if (!r.ok) {
+      log('warn', 'discord api error', { path, status: r.status });
+      return null;
+    }
+    try {
+      return (await r.json()) as unknown;
+    } catch {
+      return null;
+    }
+  };
+}
+
+// Forum channel tag id -> name map (GET /channels/{forum}).
+export async function forumTagMap(api: DiscordApi, parent: string): Promise<Record<string, string>> {
+  const ch = (await api(`/channels/${parent}`)) as { available_tags?: { id: string; name: string }[] } | null;
+  const m: Record<string, string> = {};
+  for (const t of ch?.available_tags ?? []) m[t.id] = t.name;
+  return m;
+}
+
+// First message of a forum post. For forum threads the starter message id equals
+// the thread id, so /channels/{thread}/messages/{thread} returns the post body.
+export async function threadStarter(
+  api: DiscordApi,
+  threadId: string,
+): Promise<{ content: string; author: string }> {
+  const msg = (await api(`/channels/${threadId}/messages/${threadId}`)) as DStarter | null;
+  return {
+    content: (msg?.content ?? '').slice(0, 4000),
+    author: msg?.author?.global_name || msg?.author?.username || '',
+  };
+}
+
+// Best-effort post body: the starter message, else the first message in the
+// thread that actually has text. Guards against posts whose starter is empty.
+export async function threadBody(
+  api: DiscordApi,
+  threadId: string,
+): Promise<{ content: string; author: string }> {
+  const starter = await threadStarter(api, threadId);
+  if (starter.content.trim()) return starter;
+  const msgs = (await api(`/channels/${threadId}/messages?limit=20`)) as DStarter[] | null;
+  if (Array.isArray(msgs)) {
+    const hit = msgs.find((m) => (m.content ?? '').trim().length > 0);
+    if (hit) {
+      return {
+        content: (hit.content ?? '').slice(0, 4000),
+        author: starter.author || hit.author?.global_name || hit.author?.username || '',
+      };
+    }
+  }
+  return starter;
+}
+
+function threadTag(th: DThread, tagMap: Record<string, string>, fallback: string): string {
+  const names = (th.applied_tags ?? []).map((id) => tagMap[id]).filter((x): x is string => !!x);
+  return names.length ? names.join(', ') : fallback;
+}
 
 export async function pollDiscord(
   db: PollDb,
@@ -81,20 +163,7 @@ export async function pollDiscord(
   if (map.channels.length === 0 && map.threads.length === 0) {
     return { mailed: 0, skipped: 'no-feeds' };
   }
-  const api = async (path: string): Promise<unknown> => {
-    const r = await fetchFn('https://discord.com/api/v10' + path, {
-      headers: { Authorization: 'Bot ' + token },
-    });
-    if (r.status === 429) {
-      log('warn', 'discord poll rate-limited', { path });
-      return null;
-    }
-    if (!r.ok) {
-      log('warn', 'discord api error', { path, status: r.status });
-      return null;
-    }
-    return (await r.json()) as unknown;
-  };
+  const api = makeDiscordApi(token, fetchFn, log);
   const getMark = async (k: string): Promise<string> => {
     const row = await db.prepare('SELECT value FROM poll_state WHERE key = ?').bind(k).first<{ value: string }>();
     return row?.value ?? '';
@@ -182,16 +251,26 @@ export async function pollDiscord(
       active: active.length,
       total: collected.length,
     });
+    const tagMaps = new Map<string, Record<string, string>>();
+    let processed = 0;
     for (const th of collected) {
       const seen = await db.prepare('SELECT 1 FROM seen_threads WHERE thread_id = ?').bind(th.id).first();
       if (seen) continue;
+      // Cap new threads per tick: each one needs a starter-message fetch, and a
+      // large backfill would otherwise blow past Worker subrequest limits. The
+      // rest are picked up on subsequent cron ticks (seen_threads tracks them).
+      if (processed >= 25) break;
+      if (!tagMaps.has(t.parent)) tagMaps.set(t.parent, await forumTagMap(api, t.parent));
+      const tag = threadTag(th, tagMaps.get(t.parent) ?? {}, t.type);
+      const body = await threadBody(api, th.id);
       await insert(
         {
           server: t.server,
           type: t.type,
-          title: 'Thread: ' + (th.name ?? 'untitled').slice(0, 80),
-          content: `New thread in <#${t.parent}>`,
-          author: th.owner_id ?? 'unknown',
+          tag,
+          title: (th.name ?? 'untitled').slice(0, 120),
+          content: body.content || `New thread in <#${t.parent}>`,
+          author: body.author || th.owner_id || 'discord',
           by: 'poller',
           src: 'discord',
           url: `https://discord.com/channels/${t.guild}/${th.id}`,
@@ -200,6 +279,7 @@ export async function pollDiscord(
       );
       await db.prepare('INSERT OR IGNORE INTO seen_threads (thread_id) VALUES (?)').bind(th.id).run();
       mailed++;
+      processed++;
     }
     await db
       .prepare('DELETE FROM seen_threads WHERE seen_at < ?')
@@ -207,4 +287,57 @@ export async function pollDiscord(
       .run();
   }
   return { mailed };
+}
+
+// Backfill existing poller-created thread items whose body is still the
+// placeholder with the real post content, author, and forum tag names.
+// Processes a bounded batch and returns `remaining` so it can be called
+// repeatedly without exceeding Worker subrequest limits.
+export async function backfillDiscordThreads(
+  db: PollDb,
+  env: PollEnv,
+  limit = 40,
+  fetchFn: typeof fetch = fetch,
+  log: Logger = noopLog,
+): Promise<{ updated: number; remaining: number }> {
+  const token = env.DISCORD_BOT_TOKEN;
+  if (!token) return { updated: 0, remaining: 0 };
+  const api = makeDiscordApi(token, fetchFn, log);
+  const rows = await db
+    .prepare(
+      `SELECT id, url, type FROM inbox_items
+       WHERE src = 'discord' AND by = 'poller' AND (content = '' OR content LIKE 'New thread in <%')
+       LIMIT ?`,
+    )
+    .bind(limit)
+    .all<{ id: string; url: string; type: string }>();
+  const tagMaps = new Map<string, Record<string, string>>();
+  let updated = 0;
+  for (const row of rows.results ?? []) {
+    const threadId = (row.url || '').split('/').pop() || '';
+    if (!/^\d+$/.test(threadId)) continue;
+    const th = (await api(`/channels/${threadId}`)) as DThread | null;
+    if (!th) {
+      // Thread gone (deleted) — clear the placeholder so we don't retry forever.
+      await db.prepare(`UPDATE inbox_items SET content = '(deleted)' WHERE id = ?`).bind(row.id).run();
+      continue;
+    }
+    const parent = th.parent_id || '';
+    if (!tagMaps.has(parent)) tagMaps.set(parent, await forumTagMap(api, parent));
+    const tag = threadTag(th, tagMaps.get(parent) ?? {}, row.type || 'support');
+    const body = await threadBody(api, threadId);
+    const content = body.content.trim() ? body.content : '(no text content)';
+    await db
+      .prepare(`UPDATE inbox_items SET content = ?, tag = ?, author = ?, title = ? WHERE id = ?`)
+      .bind(content, tag, body.author || 'discord', (th.name ?? 'untitled').slice(0, 120), row.id)
+      .run();
+    updated++;
+  }
+  const remaining = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM inbox_items
+       WHERE src = 'discord' AND by = 'poller' AND (content = '' OR content LIKE 'New thread in <%')`,
+    )
+    .first<{ n: number }>();
+  return { updated, remaining: Number(remaining?.n ?? 0) };
 }

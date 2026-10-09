@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { pollDiscord } from './poll';
+import { pollDiscord, backfillDiscordThreads } from './poll';
 import { verifyAccessJwt } from './access';
 import {
   discordLoginUrl,
@@ -541,6 +541,42 @@ app.post('/api/inbox/:id/archive', async (c) => {
   } catch (err) {
     jsonLog('error', 'archive failed', { error: String(err) });
     return bad('Failed to archive', 500);
+  }
+});
+
+// Mark complete: tag it "complete" and take it off the dashboard (archived).
+app.post('/api/inbox/:id/complete', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const r = await c.env.DB.prepare(
+      `UPDATE inbox_items SET archived = 1, tag = 'complete' WHERE id = ?`,
+    ).bind(id).run();
+    if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
+      return bad('item not found', 404);
+    }
+    return c.json({ ok: true });
+  } catch (err) {
+    jsonLog('error', 'complete failed', { error: String(err) });
+    return bad('Failed to complete', 500);
+  }
+});
+
+// Enrich already-ingested poller thread items with real content/author/tags.
+// Bounded batch; call repeatedly until remaining = 0.
+app.post('/api/admin/backfill-threads', async (c) => {
+  try {
+    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? '40') || 40, 1), 100);
+    const r = await backfillDiscordThreads(
+      c.env.DB,
+      c.env,
+      limit,
+      fetch,
+      (level, msg, extra) => jsonLog(level, msg, extra),
+    );
+    return c.json({ ok: true, ...r });
+  } catch (err) {
+    jsonLog('error', 'backfill threads failed', { error: String(err) });
+    return bad('Backfill failed', 500);
   }
 });
 
