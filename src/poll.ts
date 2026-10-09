@@ -52,6 +52,12 @@ export function parseFeedMap(env: PollEnv): { channels: FeedChannel[]; threads: 
 }
 
 type DMsg = { id: string; content?: string; author?: { bot?: boolean; username?: string } };
+type DThread = {
+  id: string;
+  name?: string;
+  owner_id?: string;
+  thread_metadata?: { archived?: boolean; archive_timestamp?: string };
+};
 
 const newer = (a: string, b: string): boolean => {
   try {
@@ -128,13 +134,43 @@ export async function pollDiscord(
     }
     if (fresh.length > 0) await setMark('msg:' + f.channel, fresh[fresh.length - 1].id);
   }
-  // Active threads (THREAD_CREATE equivalent for report-style channels).
+  // Forum/thread channels: active threads + archived public threads.
+  // Forum posts auto-archive (default ~24h), so polling only /threads/active
+  // permanently misses any post that archives before a tick. We page through
+  // the archived-public listing too, then dedupe by thread id.
   for (const t of map.threads) {
-    const data = (await api(`/channels/${t.parent}/threads/active`)) as {
-      threads?: { id: string; name?: string; owner_id?: string }[];
-    } | null;
-    debug('info', 'poll feed', { kind: 'threads', server: t.server, parent: t.parent, got: data && Array.isArray(data.threads) ? data.threads.length : 'error' });
-    for (const th of data?.threads ?? []) {
+    const seenIds = new Set<string>();
+    const collected: DThread[] = [];
+    const active = (await api(`/channels/${t.parent}/threads/active`)) as { threads?: DThread[] } | null;
+    for (const th of active?.threads ?? []) {
+      if (!seenIds.has(th.id)) { seenIds.add(th.id); collected.push(th); }
+    }
+    let before: string | undefined;
+    for (let page = 0; page < 5; page++) {
+      const q =
+        `/channels/${t.parent}/threads/archived/public?limit=100` +
+        (before ? `&before=${encodeURIComponent(before)}` : '');
+      const data = (await api(q)) as { threads?: DThread[]; has_more?: boolean } | null;
+      if (!data || !Array.isArray(data.threads) || data.threads.length === 0) break;
+      for (const th of data.threads) {
+        if (!seenIds.has(th.id)) { seenIds.add(th.id); collected.push(th); }
+      }
+      if (!data.has_more) break;
+      const times = data.threads
+        .map((x) => x.thread_metadata?.archive_timestamp)
+        .filter((x): x is string => !!x)
+        .sort();
+      before = times[0];
+      if (!before) break;
+    }
+    debug('info', 'poll feed', {
+      kind: 'threads',
+      server: t.server,
+      parent: t.parent,
+      active: active && Array.isArray(active.threads) ? active.threads.length : 'error',
+      total: collected.length,
+    });
+    for (const th of collected) {
       const seen = await db.prepare('SELECT 1 FROM seen_threads WHERE thread_id = ?').bind(th.id).first();
       if (seen) continue;
       await insert(

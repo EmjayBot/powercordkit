@@ -16,6 +16,7 @@ type Bindings = {
   MOD_API_KEY?: string;
   DISCORD_BOT_TOKEN?: string;
   FEED_MAP?: string;
+  POLL_DEBUG?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();

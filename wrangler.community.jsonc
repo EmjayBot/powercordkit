@@ -7,6 +7,10 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "powercordkit-community",
   "main": "src/index.ts",
+  // Preserve dashboard-added bindings across deploys. Without this, a
+  // `wrangler deploy` replaces dashboard plaintext vars with config vars,
+  // which silently deletes anything added in the dashboard.
+  "keep_vars": true,
   "compatibility_date": "2026-10-07",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
