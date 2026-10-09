@@ -28,6 +28,8 @@
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:50}.modal.open{display:flex}.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px;width:440px}.inp{width:100%;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;color:var(--t);font-size:13px;margin:6px 0 12px 0;outline:none}
 .abtn{padding:6px 11px;border-radius:8px;border:1px solid var(--bd);background:var(--p2);color:var(--t);font-size:12px;cursor:pointer}.abtn.prim{background:var(--b);border-color:var(--b);color:white}
 .status{font-size:11px;color:var(--m);padding:6px 12px;border-bottom:1px solid var(--bd)}
+.origin{font-size:11px;color:var(--m);margin-top:18px;padding-top:10px;border-top:1px solid var(--bd);line-height:1.7}
+.orig2{font-size:10px;color:var(--m);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -183,7 +185,13 @@ function render() {
   data.forEach((d) => {
     const el = document.createElement('div');
     el.className = 'item' + (sel && sel.id === d.id ? ' sel' : '');
-    el.innerHTML = '<div class="av">' + esc((d.author || '?')[0].toUpperCase()) + '</div><div style="flex:1;min-width:0"><div class="meta"><span class="badge">' + esc(d.src) + '</span><span class="badge">' + esc(d.server) + '</span>' + (d.tag ? '<span class="badge">' + esc(d.tag) + '</span>' : '') + (d.assigned ? '<span class="badge">👤 ' + esc(d.assigned) + '</span>' : '') + '<span>' + esc(d.author || '') + '</span><span>' + esc(d.time || '') + '</span></div><div class="title">' + esc(d.title) + '</div><div class="prev">' + esc((d.content || '').slice(0, 75)) + '...</div></div>';
+    const tAg = (d.tag && d.tag.toLowerCase() !== (d.type || '').toLowerCase()) ? '<span class="badge">' + esc(d.tag) + '</span>' : '';
+    el.innerHTML = '<div class="av">' + esc((d.author || '?')[0].toUpperCase()) + '</div><div style="flex:1;min-width:0">' +
+      '<div class="meta"><span class="badge">' + esc(d.type || d.src) + '</span>' + tAg + (d.assigned ? '<span class="badge">👤 ' + esc(d.assigned) + '</span>' : '') + '<span style="margin-left:auto">' + esc(d.time || '') + '</span></div>' +
+      '<div class="title">' + esc(d.title) + '</div>' +
+      '<div class="prev">' + esc((d.content || '').slice(0, 75)) + '...</div>' +
+      '<div class="orig2">' + esc(d.author || 'unknown') + ' • ' + esc(d.server) + ' • ' + esc(d.src) + '</div>' +
+      '</div>';
     el.onclick = () => select(d.id);
     c.appendChild(el);
   });
@@ -194,14 +202,19 @@ function select(id) {
   if (!sel) return;
   render();
   const det = $('detail');
+  const isTag = sel.tag && sel.tag.toLowerCase() !== (sel.type || '').toLowerCase();
   det.innerHTML =
-    '<div style="padding:14px;border-bottom:1px solid #26262b;display:flex;justify-content:space-between;align-items:center"><div><span class="badge">' + esc(sel.src) + '</span> ' + esc(sel.server) + ' / ' + esc(sel.type) + (sel.tag ? ' / ' + esc(sel.tag) : '') + '</div><div>' + (sel.archived ? '<button class="abtn prim" id="arch-btn">Reopen</button>' : '<button class="abtn prim" id="arch-btn">Complete (E)</button>') + ' <button class="abtn" id="jump-btn">Jump ↗</button></div></div>' +
-    '<div class="content"><div style="font-size:11px;color:var(--m)">Posted by ' + esc(sel.author || 'unknown') + ' • Mailed by ' + esc(sel.by) + ' • Assigned ' + esc(sel.assigned || 'Unassigned') + ' • <a href="#" id="assign-link" style="color:#5865F2">assign to me</a></div>' +
-    '<h2 style="font-size:18px;margin:10px 0">' + esc(sel.title) + '</h2>' +
-    (sel.url && sel.url !== '#' ? '<div style="margin-bottom:10px"><a href="' + esc(sel.url) + '" target="_blank" rel="noopener" style="color:#5865F2;font-size:12px">Open in Discord ↗</a></div>' : '') +
-    '<div class="box">' + md(sel.content) + '</div>' +
-    '<div id="notes">' + (sel.notes || []).map((n) => '<div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #26262b"><div class="av" style="width:22px;height:22px">' + esc((n.by || '?')[0]) + '</div><div><b style="font-size:12px">' + esc(n.by) + '</b><div style="font-size:13px">' + esc(n.text) + '</div></div></div>').join('') + '</div>' +
-    '<div style="display:flex;gap:8px;margin-top:10px"><input class="search" id="note-inp" placeholder="Add private note…" /><button class="abtn prim" id="note-btn">Add</button></div></div>';
+    '<div style="padding:14px;border-bottom:1px solid #26262b;display:flex;justify-content:space-between;align-items:flex-start">' +
+      '<div><div><span class="badge">' + esc(sel.type || sel.src) + '</span>' + (isTag ? ' <span class="badge">' + esc(sel.tag) + '</span>' : '') + (sel.assigned ? ' <span class="badge">👤 ' + esc(sel.assigned) + '</span>' : '') + '</div><div style="font-size:11px;color:var(--m);margin-top:6px">' + esc(sel.time || '') + '</div></div>' +
+      '<div>' + (sel.archived ? '<button class="abtn prim" id="arch-btn">Reopen</button>' : '<button class="abtn prim" id="arch-btn">Complete (E)</button>') + ' <button class="abtn" id="jump-btn">Jump ↗</button></div>' +
+    '</div>' +
+    '<div class="content">' +
+      '<h2 style="font-size:18px;margin:0 0 10px 0">' + esc(sel.title) + '</h2>' +
+      '<div class="box">' + md(sel.content) + '</div>' +
+      '<div id="notes">' + (sel.notes || []).map((n) => '<div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #26262b"><div class="av" style="width:22px;height:22px">' + esc((n.by || '?')[0]) + '</div><div><b style="font-size:12px">' + esc(n.by) + '</b><div style="font-size:13px">' + esc(n.text) + '</div></div></div>').join('') + '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:10px"><input class="search" id="note-inp" placeholder="Add private note…" /><button class="abtn prim" id="note-btn">Add</button></div>' +
+      '<div class="origin">Posted by <b style="color:var(--t)">' + esc(sel.author || 'unknown') + '</b> • From ' + esc(sel.server) + ' (' + esc(sel.src) + ') • Mailed by ' + esc(sel.by) + ' • <a href="#" id="assign-link" style="color:#5865F2">assign to me</a>' + (sel.url && sel.url !== '#' ? ' • <a href="' + esc(sel.url) + '" target="_blank" rel="noopener" style="color:#5865F2">Open in Discord ↗</a>' : '') + '</div>' +
+    '</div>';
   $('arch-btn').onclick = () => (sel.archived ? reopen(sel.id) : complete(sel.id));
   $('jump-btn').onclick = () => { if (sel.url && sel.url !== '#') window.open(sel.url, '_blank', 'noopener'); };
   $('assign-link').onclick = (e) => { e.preventDefault(); assign(sel.id, '@me'); };
