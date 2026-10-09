@@ -161,6 +161,26 @@ export async function setForumTag(
   return { ok: true, tag: match.name };
 }
 
+// Post a message into a Discord thread (e.g. assignment notice). Best-effort.
+export async function postThreadMessage(
+  token: string,
+  threadId: string,
+  content: string,
+  fetchFn: typeof fetch = fetch,
+  log: Logger = noopLog,
+): Promise<{ ok: boolean; reason?: string }> {
+  const r = await fetchFn(`https://discord.com/api/v10/channels/${threadId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: 'Bot ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!r.ok) {
+    log('warn', 'post thread message failed', { status: r.status, thread: threadId });
+    return { ok: false, reason: 'post-' + r.status };
+  }
+  return { ok: true };
+}
+
 const newer = (a: string, b: string): boolean => {
   try {
     return BigInt(a) > BigInt(b);

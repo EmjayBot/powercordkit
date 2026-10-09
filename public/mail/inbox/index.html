@@ -183,7 +183,7 @@ function render() {
   data.forEach((d) => {
     const el = document.createElement('div');
     el.className = 'item' + (sel && sel.id === d.id ? ' sel' : '');
-    el.innerHTML = '<div class="av">' + esc((d.author || '?')[0].toUpperCase()) + '</div><div style="flex:1;min-width:0"><div class="meta"><span class="badge">' + esc(d.src) + '</span><span class="badge">' + esc(d.server) + '</span>' + (d.tag ? '<span class="badge">' + esc(d.tag) + '</span>' : '') + '<span>' + esc(d.time || '') + '</span></div><div class="title">' + esc(d.title) + '</div><div class="prev">' + esc((d.content || '').slice(0, 75)) + '...</div></div>';
+    el.innerHTML = '<div class="av">' + esc((d.author || '?')[0].toUpperCase()) + '</div><div style="flex:1;min-width:0"><div class="meta"><span class="badge">' + esc(d.src) + '</span><span class="badge">' + esc(d.server) + '</span>' + (d.tag ? '<span class="badge">' + esc(d.tag) + '</span>' : '') + (d.assigned ? '<span class="badge">👤 ' + esc(d.assigned) + '</span>' : '') + '<span>' + esc(d.time || '') + '</span></div><div class="title">' + esc(d.title) + '</div><div class="prev">' + esc((d.content || '').slice(0, 75)) + '...</div></div>';
     el.onclick = () => select(d.id);
     c.appendChild(el);
   });

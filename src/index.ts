@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { pollDiscord, backfillDiscordThreads, setForumTag } from './poll';
+import { pollDiscord, backfillDiscordThreads, setForumTag, postThreadMessage } from './poll';
 import { verifyAccessJwt } from './access';
 import {
   discordLoginUrl,
@@ -544,13 +544,41 @@ app.post('/api/inbox/:id/assign', async (c) => {
   try {
     const id = c.req.param('id');
     const body = await readJson<{ assigned?: string }>(c);
+    // "@me" (or empty) resolves to the logged-in mod's Discord name/id.
+    let name = (body.assigned ?? '').trim();
+    let uid = '';
+    if (name === '@me' || name === '') {
+      const sess = c.env.SESSION_SECRET;
+      const s = sess ? await verifySession(readCookie(c.req.header('cookie'), 'pck_session'), sess) : null;
+      name = (s?.uname as string) || name;
+      uid = (s?.uid as string) || '';
+    }
     const r = await c.env.DB.prepare(`UPDATE inbox_items SET assigned = ? WHERE id = ?`)
-      .bind((body.assigned ?? null) as string | null, id)
+      .bind(name || null, id)
       .run();
     if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
       return bad('item not found', 404);
     }
-    return c.json({ ok: true });
+    // Best effort: announce the assignment in the Discord thread.
+    let discord: unknown = { skipped: 'n/a' };
+    if (c.env.DISCORD_BOT_TOKEN && uid && name) {
+      const row = await c.env.DB.prepare(`SELECT url, src FROM inbox_items WHERE id = ?`)
+        .bind(id)
+        .first<{ url: string; src: string }>();
+      if (row?.src === 'discord' && row.url) {
+        const tid = (row.url || '').split('/').pop() || '';
+        if (/^\d+$/.test(tid)) {
+          discord = await postThreadMessage(
+            c.env.DISCORD_BOT_TOKEN,
+            tid,
+            `Assigned to <@${uid}>`,
+            fetch,
+            (level, msg, extra) => jsonLog(level, msg, extra),
+          );
+        }
+      }
+    }
+    return c.json({ ok: true, assigned: name, discord });
   } catch (err) {
     const passthrough = passthroughResponse(err);
     if (passthrough) return passthrough;
