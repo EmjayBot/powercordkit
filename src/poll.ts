@@ -120,7 +120,7 @@ export async function setForumTag(
   remove = false,
   fetchFn: typeof fetch = fetch,
   log: Logger = noopLog,
-): Promise<{ ok: boolean; tag?: string; reason?: string; tags?: string[] }> {
+): Promise<{ ok: boolean; tag?: string; reason?: string; tags?: string[]; skipped?: string }> {
   const base = 'https://discord.com/api/v10';
   const auth = { Authorization: 'Bot ' + token };
   const get = async (p: string): Promise<any> => {
@@ -144,6 +144,8 @@ export async function setForumTag(
     tags.find((t) => keys.some((k) => t.name.toLowerCase().includes(k)));
   if (!match) return { ok: false, reason: 'no-matching-tag', tags: tags.map((t) => t.name) };
   const current: string[] = th.applied_tags ?? [];
+  if (remove && !current.includes(match.id)) return { ok: true, skipped: 'tag-not-applied', tag: match.name };
+  if (!remove && current.includes(match.id)) return { ok: true, skipped: 'tag-already-applied', tag: match.name };
   const next = remove
     ? current.filter((id) => id !== match.id)
     : Array.from(new Set([...current, match.id]));
