@@ -30,6 +30,20 @@
 .status{font-size:11px;color:var(--m);padding:6px 12px;border-bottom:1px solid var(--bd)}
 .origin{font-size:11px;color:var(--m);margin-top:18px;padding-top:10px;border-top:1px solid var(--bd);line-height:1.7}
 .orig2{font-size:10px;color:var(--m);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mob-only{display:none!important}
+@media(max-width:820px){
+  .side{position:fixed;left:0;top:0;bottom:0;z-index:70;width:270px;max-width:82vw;transform:translateX(-100%);transition:transform .18s ease;border-right:1px solid var(--bd)}
+  .side.open{transform:translateX(0);box-shadow:0 0 0 100vmax rgba(0,0,0,.55)}
+  .list{width:100%;border-right:0}
+  .detail{position:fixed;inset:0;z-index:65;transform:translateX(100%);transition:transform .18s ease}
+  .detail.open{transform:translateX(0)}
+  .mob-only{display:inline-flex!important}
+  .item{padding:14px 12px}
+  .content{padding:14px}
+  .orig2{white-space:normal}
+  .card{width:auto;max-width:92vw}
+  .modal .card{width:92vw}
+}
 </style>
 </head>
 <body>
@@ -42,7 +56,7 @@
     <div style="margin-top:auto"><div style="font-size:10px;color:var(--m);line-height:1.6" id="hook-hint">Discourse webhook:<br/>POST /hooks/discourse</div><div style="font-size:10px;margin-top:10px"><a href="https://powercordkit.emjay.fyi" target="_blank" rel="noopener" style="color:var(--m);text-decoration:none">Powered by PowerCordKit</a></div></div>
   </div>
   <div class="list">
-    <div class="list-top"><input class="search" id="q" placeholder="Search ideas, bugs, tickets…" /><button class="btn" id="new-btn">+ New</button></div>
+    <div class="list-top"><button class="btn mob-only" id="filters-btn" style="flex:0 0 auto">☰</button><input class="search" id="q" placeholder="Search ideas, bugs, tickets…" /><button class="btn" id="new-btn">+ New</button></div>
     <div class="status" id="status">Connecting to API…</div>
     <div class="items" id="items"></div>
   </div>
@@ -201,10 +215,11 @@ function select(id) {
   if (!sel) return;
   render();
   const det = $('detail');
+  det.classList.add('open');
   const isTag = sel.tag && sel.tag.toLowerCase() !== (sel.type || '').toLowerCase();
   det.innerHTML =
     '<div style="padding:14px;border-bottom:1px solid #26262b;display:flex;justify-content:space-between;align-items:flex-start">' +
-      '<div><div><span class="badge">' + esc(sel.type || sel.src) + '</span>' + (isTag ? ' <span class="badge">' + esc(sel.tag) + '</span>' : '') + (sel.assigned ? ' <span class="badge">👤 ' + esc(sel.assigned) + '</span>' : '') + '</div><div style="font-size:11px;color:var(--m);margin-top:6px">' + esc(sel.time || '') + '</div></div>' +
+      '<div style="display:flex;align-items:flex-start;gap:8px"><button class="abtn mob-only" id="back-btn" style="margin-top:2px;flex:0 0 auto">←</button><div><div><span class="badge">' + esc(sel.type || sel.src) + '</span>' + (isTag ? ' <span class="badge">' + esc(sel.tag) + '</span>' : '') + (sel.assigned ? ' <span class="badge">👤 ' + esc(sel.assigned) + '</span>' : '') + '</div><div style="font-size:11px;color:var(--m);margin-top:6px">' + esc(sel.time || '') + '</div></div></div>' +
       '<div>' + (sel.archived ? '<button class="abtn prim" id="arch-btn">Reopen</button>' : '<button class="abtn prim" id="arch-btn">Complete (E)</button>') + ' <button class="abtn" id="jump-btn">Jump ↗</button></div>' +
     '</div>' +
     '<div class="content">' +
@@ -230,6 +245,8 @@ function select(id) {
   $('rm-save').onclick = () => roadmapSave(sel.id);
   const rmv = $('rm-remove');
   if (rmv) rmv.onclick = () => roadmapRemove(sel.id);
+  const back = $('back-btn');
+  if (back) back.onclick = () => { sel = null; $('detail').classList.remove('open'); render(); };
 }
 
 async function roadmapSave(id) {
@@ -293,13 +310,17 @@ function openM() { $('modal').classList.add('open'); }
 function closeM() { $('modal').classList.remove('open'); }
 $('new-btn').onclick = openM; $('cancel-btn').onclick = closeM; $('send-btn').onclick = addItem;
 $('q').addEventListener('input', () => load());
-document.querySelector('.side').addEventListener('click', (e) => {
+const sideEl = document.querySelector('.side');
+const fbtn = $('filters-btn');
+if (fbtn) fbtn.onclick = () => sideEl.classList.toggle('open');
+sideEl.addEventListener('click', (e) => {
   const el = e.target.closest ? e.target.closest('[data-server],[data-type],[data-status]') : null;
   if (!el) return;
   const srv = el.dataset.server, typ = el.dataset.type, st = el.dataset.status;
   if (srv !== undefined) { document.querySelectorAll('[data-server]').forEach((x) => x.classList.remove('active')); el.classList.add('active'); fS = srv; }
   if (typ !== undefined) { document.querySelectorAll('[data-type]').forEach((x) => x.classList.remove('active')); el.classList.add('active'); fT = typ; }
   if (st !== undefined) { document.querySelectorAll('[data-status]').forEach((x) => x.classList.remove('active')); el.classList.add('active'); fStatus = st; sel = null; }
+  sideEl.classList.remove('open');
   load();
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E') { if (sel && document.activeElement.tagName !== 'INPUT') { sel.archived ? reopen(sel.id) : complete(sel.id); } } if (e.key === 'Escape') closeM(); });
