@@ -195,14 +195,14 @@ function select(id) {
   render();
   const det = $('detail');
   det.innerHTML =
-    '<div style="padding:14px;border-bottom:1px solid #26262b;display:flex;justify-content:space-between;align-items:center"><div><span class="badge">' + esc(sel.src) + '</span> ' + esc(sel.server) + ' / ' + esc(sel.type) + (sel.tag ? ' / ' + esc(sel.tag) : '') + '</div><div><button class="abtn prim" id="arch-btn">Complete (E)</button> <button class="abtn" id="jump-btn">Jump ↗</button></div></div>' +
+    '<div style="padding:14px;border-bottom:1px solid #26262b;display:flex;justify-content:space-between;align-items:center"><div><span class="badge">' + esc(sel.src) + '</span> ' + esc(sel.server) + ' / ' + esc(sel.type) + (sel.tag ? ' / ' + esc(sel.tag) : '') + '</div><div>' + (sel.archived ? '<button class="abtn prim" id="arch-btn">Reopen</button>' : '<button class="abtn prim" id="arch-btn">Complete (E)</button>') + ' <button class="abtn" id="jump-btn">Jump ↗</button></div></div>' +
     '<div class="content"><div style="font-size:11px;color:var(--m)">Mailed by ' + esc(sel.by) + ' • Assigned ' + esc(sel.assigned || 'Unassigned') + ' • <a href="#" id="assign-link" style="color:#5865F2">assign to me</a></div>' +
     '<h2 style="font-size:18px;margin:10px 0">' + esc(sel.title) + '</h2>' +
     (sel.url && sel.url !== '#' ? '<div style="margin-bottom:10px"><a href="' + esc(sel.url) + '" target="_blank" rel="noopener" style="color:#5865F2;font-size:12px">Open in Discord ↗</a></div>' : '') +
     '<div class="box">' + md(sel.content) + '</div>' +
     '<div id="notes">' + (sel.notes || []).map((n) => '<div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #26262b"><div class="av" style="width:22px;height:22px">' + esc((n.by || '?')[0]) + '</div><div><b style="font-size:12px">' + esc(n.by) + '</b><div style="font-size:13px">' + esc(n.text) + '</div></div></div>').join('') + '</div>' +
     '<div style="display:flex;gap:8px;margin-top:10px"><input class="search" id="note-inp" placeholder="Add private note…" /><button class="abtn prim" id="note-btn">Add</button></div></div>';
-  $('arch-btn').onclick = () => complete(sel.id);
+  $('arch-btn').onclick = () => (sel.archived ? reopen(sel.id) : complete(sel.id));
   $('jump-btn').onclick = () => { if (sel.url && sel.url !== '#') window.open(sel.url, '_blank', 'noopener'); };
   $('assign-link').onclick = (e) => { e.preventDefault(); assign(sel.id, '@me'); };
   $('note-btn').onclick = () => addNote(sel.id);
@@ -212,7 +212,16 @@ async function complete(id) {
   try { await api('/api/inbox/' + encodeURIComponent(id) + '/complete', { method: 'POST' }); } catch {}
   data = data.filter((d) => String(d.id) !== String(id));
   sel = null;
-  $('detail').innerHTML = '<div style="padding:60px;text-align:center;color:var(--m)">Completed • Inbox Zero 🎉</div>';
+  $('detail').innerHTML = '<div style="padding:60px;text-align:center;color:var(--m)">Completed • cleared from dashboard 🎉</div>';
+  render();
+  load();
+}
+
+async function reopen(id) {
+  try { await api('/api/inbox/' + encodeURIComponent(id) + '/reopen', { method: 'POST' }); } catch {}
+  data = data.filter((d) => String(d.id) !== String(id));
+  sel = null;
+  $('detail').innerHTML = '<div style="padding:60px;text-align:center;color:var(--m)">Reopened • back on the dashboard</div>';
   render();
   load();
 }
@@ -255,7 +264,7 @@ document.querySelector('.side').addEventListener('click', (e) => {
   if (st !== undefined) { document.querySelectorAll('[data-status]').forEach((x) => x.classList.remove('active')); el.classList.add('active'); fStatus = st; sel = null; }
   load();
 });
-document.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E') { if (sel && document.activeElement.tagName !== 'INPUT') complete(sel.id); } if (e.key === 'Escape') closeM(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E') { if (sel && document.activeElement.tagName !== 'INPUT') { sel.archived ? reopen(sel.id) : complete(sel.id); } } if (e.key === 'Escape') closeM(); });
 load();
 </script>
 </body>

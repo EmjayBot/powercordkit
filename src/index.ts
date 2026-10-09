@@ -393,7 +393,7 @@ app.get('/api/inbox', async (c) => {
     const binds: unknown[] = [];
     if (status === 'completed') {
       where.push('archived = 1');
-      where.push("tag = 'complete'");
+      where.push("tag = 'Completed'");
     } else if (!includeArchived) {
       where.push('archived = 0');
     }
@@ -548,12 +548,12 @@ app.post('/api/inbox/:id/archive', async (c) => {
   }
 });
 
-// Mark complete: tag it "complete" and take it off the dashboard (archived).
+// Mark complete: tag it "Completed" and take it off the dashboard (archived).
 app.post('/api/inbox/:id/complete', async (c) => {
   try {
     const id = c.req.param('id');
     const r = await c.env.DB.prepare(
-      `UPDATE inbox_items SET archived = 1, tag = 'complete' WHERE id = ?`,
+      `UPDATE inbox_items SET archived = 1, tag = 'Completed' WHERE id = ?`,
     ).bind(id).run();
     if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
       return bad('item not found', 404);
@@ -562,6 +562,23 @@ app.post('/api/inbox/:id/complete', async (c) => {
   } catch (err) {
     jsonLog('error', 'complete failed', { error: String(err) });
     return bad('Failed to complete', 500);
+  }
+});
+
+// Reopen a completed item: back on the dashboard with its type as the tag.
+app.post('/api/inbox/:id/reopen', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const r = await c.env.DB.prepare(
+      `UPDATE inbox_items SET archived = 0, tag = type WHERE id = ?`,
+    ).bind(id).run();
+    if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
+      return bad('item not found', 404);
+    }
+    return c.json({ ok: true });
+  } catch (err) {
+    jsonLog('error', 'reopen failed', { error: String(err) });
+    return bad('Failed to reopen', 500);
   }
 });
 
