@@ -39,6 +39,7 @@
   <div class="side">
     <div><h4>Servers</h4><div id="srv-filters"><div class="srv active" data-server="all"><span>All Servers</span><span id="c-all">–</span></div></div></div>
     <div><h4>Type</h4><div id="type-filters"><div class="srv active" data-type="all"><span>All types</span></div></div></div>
+    <div><h4>View</h4><div id="view-filters"><div class="srv active" data-status="open"><span>Open</span></div><div class="srv" data-status="completed"><span>Completed</span></div></div></div>
     <div style="margin-top:auto"><div style="font-size:10px;color:var(--m);line-height:1.6" id="hook-hint">Discourse webhook:<br/>POST /hooks/discourse</div></div>
   </div>
   <div class="list">
@@ -55,9 +56,34 @@
 <select class="inp" id="m-type"><option>idea</option><option>support</option><option>ticket</option><option>mailed</option></select>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button class="abtn" id="cancel-btn">Cancel</button><button class="abtn prim" id="send-btn">Mail to Inbox</button></div></div></div>
 <script>
-let data = [], sel = null, fS = 'all', fT = 'all', serversCache = [];
+let data = [], sel = null, fS = 'all', fT = 'all', fStatus = 'open', serversCache = [];
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// Render a safe subset of Discord markdown: bold/italic/underline/strike,
+// spoiler, inline code, code blocks, blockquotes, headings, and links.
+function md(input) {
+  let out = esc(input || '');
+  const blocks = [];
+  out = out.replace(/```([\s\S]*?)```/g, (m, code) => {
+    blocks.push(code.replace(/^[a-zA-Z0-9]*\n/, ''));
+    return '\u0000' + (blocks.length - 1) + '\u0000';
+  });
+  out = out.replace(/`([^`\n]+)`/g, '<code style="background:#111;padding:1px 5px;border-radius:4px">$1</code>');
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#5865F2">$1</a>');
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  out = out.replace(/__([^_]+)__/g, '<u>$1</u>');
+  out = out.replace(/~~([^~]+)~~/g, '<s>$1</s>');
+  out = out.replace(/\|\|([^|]+)\|\|/g, '<span style="background:#2a2a2e;border-radius:3px;padding:0 2px">$1</span>');
+  out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+  out = out.replace(/(^|[^_])_([^_\n]+)_/g, '$1<i>$2</i>');
+  out = out.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener" style="color:#5865F2">$2</a>');
+  out = out.replace(/^#{1,6}\s*(.+)$/gm, '<b style="font-size:15px">$1</b>');
+  out = out.replace(/^&gt;\s?(.*)$/gm, '<span style="color:#9aa0a8;border-left:3px solid #444;padding-left:8px;display:inline-block">$1</span>');
+  out = out.replace(/\n/g, '<br>');
+  out = out.replace(/\u0000(\d+)\u0000/g, (m, i) => '<pre style="background:#111;padding:8px;border-radius:6px;overflow:auto;white-space:pre-wrap">' + blocks[i] + '</pre>');
+  return out;
+}
 // Mod-key gate: when the Worker sets MOD_API_KEY, /api/* (except /health)
 // needs X-Mod-Key. Prompt once per session, keep it out of URLs/storage.
 async function api(path, opts) {
@@ -118,6 +144,7 @@ async function load() {
     const params = new URLSearchParams();
     if (fS !== 'all') params.set('server', fS);
     if (fT !== 'all') params.set('type', fT);
+    if (fStatus === 'completed') params.set('status', 'completed');
     const q = $('q').value.trim();
     if (q) params.set('q', q);
     const r = await api('/api/inbox?' + params.toString());
@@ -150,13 +177,13 @@ function render() {
   if (data.length === 0) {
     c.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--m)"><div style="font-size:26px;margin-bottom:8px">🔍</div><div style="font-size:13px">No items match this filter.</div><button class="abtn" id="clear-filters" style="margin-top:10px">Show all</button></div>';
     const cb = $('clear-filters');
-    if (cb) cb.onclick = () => { fS = 'all'; fT = 'all'; $('q').value = ''; load(); };
+    if (cb) cb.onclick = () => { fS = 'all'; fT = 'all'; fStatus = 'open'; $('q').value = ''; document.querySelectorAll('[data-server],[data-type],[data-status]').forEach((x) => x.classList.remove('active')); document.querySelector('[data-server="all"]')?.classList.add('active'); document.querySelector('[data-type="all"]')?.classList.add('active'); document.querySelector('[data-status="open"]')?.classList.add('active'); load(); };
     return;
   }
   data.forEach((d) => {
     const el = document.createElement('div');
     el.className = 'item' + (sel && sel.id === d.id ? ' sel' : '');
-    el.innerHTML = '<div class="av">' + esc((d.author || '?')[0].toUpperCase()) + '</div><div style="flex:1;min-width:0"><div class="meta"><span class="badge">' + esc(d.src) + '</span><span class="badge">' + esc(d.server) + '</span><span>' + esc(d.time || '') + '</span></div><div class="title">' + esc(d.title) + '</div><div class="prev">' + esc((d.content || '').slice(0, 75)) + '...</div></div>';
+    el.innerHTML = '<div class="av">' + esc((d.author || '?')[0].toUpperCase()) + '</div><div style="flex:1;min-width:0"><div class="meta"><span class="badge">' + esc(d.src) + '</span><span class="badge">' + esc(d.server) + '</span>' + (d.tag ? '<span class="badge">' + esc(d.tag) + '</span>' : '') + '<span>' + esc(d.time || '') + '</span></div><div class="title">' + esc(d.title) + '</div><div class="prev">' + esc((d.content || '').slice(0, 75)) + '...</div></div>';
     el.onclick = () => select(d.id);
     c.appendChild(el);
   });
@@ -172,7 +199,7 @@ function select(id) {
     '<div class="content"><div style="font-size:11px;color:var(--m)">Mailed by ' + esc(sel.by) + ' • Assigned ' + esc(sel.assigned || 'Unassigned') + ' • <a href="#" id="assign-link" style="color:#5865F2">assign to me</a></div>' +
     '<h2 style="font-size:18px;margin:10px 0">' + esc(sel.title) + '</h2>' +
     (sel.url && sel.url !== '#' ? '<div style="margin-bottom:10px"><a href="' + esc(sel.url) + '" target="_blank" rel="noopener" style="color:#5865F2;font-size:12px">Open in Discord ↗</a></div>' : '') +
-    '<div class="box">' + esc(sel.content) + '</div>' +
+    '<div class="box">' + md(sel.content) + '</div>' +
     '<div id="notes">' + (sel.notes || []).map((n) => '<div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #26262b"><div class="av" style="width:22px;height:22px">' + esc((n.by || '?')[0]) + '</div><div><b style="font-size:12px">' + esc(n.by) + '</b><div style="font-size:13px">' + esc(n.text) + '</div></div></div>').join('') + '</div>' +
     '<div style="display:flex;gap:8px;margin-top:10px"><input class="search" id="note-inp" placeholder="Add private note…" /><button class="abtn prim" id="note-btn">Add</button></div></div>';
   $('arch-btn').onclick = () => complete(sel.id);
@@ -220,11 +247,12 @@ function closeM() { $('modal').classList.remove('open'); }
 $('new-btn').onclick = openM; $('cancel-btn').onclick = closeM; $('send-btn').onclick = addItem;
 $('q').addEventListener('input', () => load());
 document.querySelector('.side').addEventListener('click', (e) => {
-  const el = e.target.closest ? e.target.closest('[data-server],[data-type]') : null;
+  const el = e.target.closest ? e.target.closest('[data-server],[data-type],[data-status]') : null;
   if (!el) return;
-  const srv = el.dataset.server, typ = el.dataset.type;
+  const srv = el.dataset.server, typ = el.dataset.type, st = el.dataset.status;
   if (srv !== undefined) { document.querySelectorAll('[data-server]').forEach((x) => x.classList.remove('active')); el.classList.add('active'); fS = srv; }
   if (typ !== undefined) { document.querySelectorAll('[data-type]').forEach((x) => x.classList.remove('active')); el.classList.add('active'); fT = typ; }
+  if (st !== undefined) { document.querySelectorAll('[data-status]').forEach((x) => x.classList.remove('active')); el.classList.add('active'); fStatus = st; sel = null; }
   load();
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E') { if (sel && document.activeElement.tagName !== 'INPUT') complete(sel.id); } if (e.key === 'Escape') closeM(); });

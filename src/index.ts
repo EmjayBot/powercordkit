@@ -385,12 +385,16 @@ app.get('/api/inbox', async (c) => {
   try {
     const server = c.req.query('server') ?? 'all';
     const type = c.req.query('type') ?? 'all';
+    const status = c.req.query('status') ?? 'open';
     const q = (c.req.query('q') ?? '').trim().toLowerCase();
     const includeArchived = c.req.query('includeArchived') === '1';
 
     const where: string[] = [];
     const binds: unknown[] = [];
-    if (!includeArchived) {
+    if (status === 'completed') {
+      where.push('archived = 1');
+      where.push("tag = 'complete'");
+    } else if (!includeArchived) {
       where.push('archived = 0');
     }
     if (server !== 'all') {

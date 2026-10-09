@@ -55,16 +55,61 @@ export function parseFeedMap(env: PollEnv): { channels: FeedChannel[]; threads: 
   }
 }
 
-type DMsg = { id: string; content?: string; author?: { bot?: boolean; username?: string } };
+type DMsg = {
+  id: string;
+  content?: string;
+  author?: { bot?: boolean; username?: string };
+  mentions?: { id: string; global_name?: string; username?: string }[];
+  mention_roles?: string[];
+};
 type DThread = {
   id: string;
   name?: string;
   parent_id?: string;
+  guild_id?: string;
   owner_id?: string;
   applied_tags?: string[];
   thread_metadata?: { archived?: boolean; archive_timestamp?: string };
 };
-type DStarter = { content?: string; author?: { username?: string; global_name?: string } };
+type DStarter = {
+  content?: string;
+  author?: { username?: string; global_name?: string };
+  mentions?: { id: string; global_name?: string; username?: string }[];
+  mention_roles?: string[];
+};
+
+type GuildMaps = { roles: Map<string, string>; channels: Map<string, string> };
+
+// Role + channel id->name maps per guild (cached for the current run).
+async function guildMaps(api: DiscordApi, guild: string, cache: Map<string, GuildMaps>): Promise<GuildMaps> {
+  const hit = cache.get(guild);
+  if (hit) return hit;
+  const roles = new Map<string, string>();
+  const channels = new Map<string, string>();
+  const r = (await api(`/guilds/${guild}/roles`)) as { id: string; name: string }[] | null;
+  for (const x of r ?? []) roles.set(x.id, x.name);
+  const c = (await api(`/guilds/${guild}/channels`)) as { id: string; name: string }[] | null;
+  for (const x of c ?? []) channels.set(x.id, x.name);
+  const m: GuildMaps = { roles, channels };
+  cache.set(guild, m);
+  return m;
+}
+
+// Turn <@id>, <@&id>, <#id>, and custom emoji into readable text using names.
+export function resolveMentions(
+  text: string,
+  msg: { mentions?: { id: string; global_name?: string; username?: string }[] },
+  roles: Map<string, string>,
+  channels: Map<string, string>,
+): string {
+  const users = new Map<string, string>();
+  for (const u of msg.mentions ?? []) users.set(u.id, u.global_name || u.username || 'user');
+  return text
+    .replace(/<@!?(\d+)>/g, (_m, id: string) => '@' + (users.get(id) ?? 'user'))
+    .replace(/<@&(\d+)>/g, (_m, id: string) => '@' + (roles.get(id) ?? 'role'))
+    .replace(/<#(\d+)>/g, (_m, id: string) => '#' + (channels.get(id) ?? 'channel'))
+    .replace(/<a?:(\w+):\d+>/g, ':$1:');
+}
 
 const newer = (a: string, b: string): boolean => {
   try {
@@ -116,11 +161,12 @@ export async function forumTagMap(api: DiscordApi, parent: string): Promise<Reco
 export async function threadStarter(
   api: DiscordApi,
   threadId: string,
-): Promise<{ content: string; author: string }> {
+): Promise<{ content: string; author: string; mentions: NonNullable<DStarter['mentions']> }> {
   const msg = (await api(`/channels/${threadId}/messages/${threadId}`)) as DStarter | null;
   return {
     content: (msg?.content ?? '').slice(0, 4000),
     author: msg?.author?.global_name || msg?.author?.username || '',
+    mentions: msg?.mentions ?? [],
   };
 }
 
@@ -129,7 +175,7 @@ export async function threadStarter(
 export async function threadBody(
   api: DiscordApi,
   threadId: string,
-): Promise<{ content: string; author: string }> {
+): Promise<{ content: string; author: string; mentions: NonNullable<DStarter['mentions']> }> {
   const starter = await threadStarter(api, threadId);
   if (starter.content.trim()) return starter;
   const msgs = (await api(`/channels/${threadId}/messages?limit=20`)) as DStarter[] | null;
@@ -139,6 +185,7 @@ export async function threadBody(
       return {
         content: (hit.content ?? '').slice(0, 4000),
         author: starter.author || hit.author?.global_name || hit.author?.username || '',
+        mentions: hit.mentions ?? [],
       };
     }
   }
@@ -175,6 +222,7 @@ export async function pollDiscord(
       .run();
   };
   let mailed = 0;
+  const gcache = new Map<string, GuildMaps>();
   const debug = env.POLL_DEBUG === '1' ? log : noopLog;
   // Channel messages (MESSAGE_CREATE equivalent).
   for (const f of map.channels) {
@@ -186,7 +234,8 @@ export async function pollDiscord(
       .filter((m) => !m.author?.bot && (!last || newer(m.id, last)))
       .sort((a, b) => (a.id === b.id ? 0 : newer(a.id, b.id) ? 1 : -1));
     for (const m of fresh) {
-      const text = (m.content ?? '').slice(0, 4000);
+      const maps = await guildMaps(api, f.guild, gcache);
+      const text = resolveMentions((m.content ?? '').slice(0, 4000), m, maps.roles, maps.channels);
       await insert(
         {
           server: f.server,
@@ -263,13 +312,15 @@ export async function pollDiscord(
       if (!tagMaps.has(t.parent)) tagMaps.set(t.parent, await forumTagMap(api, t.parent));
       const tag = threadTag(th, tagMaps.get(t.parent) ?? {}, t.type);
       const body = await threadBody(api, th.id);
+      const maps = await guildMaps(api, t.guild, gcache);
+      const content = resolveMentions(body.content, { mentions: body.mentions }, maps.roles, maps.channels);
       await insert(
         {
           server: t.server,
           type: t.type,
           tag,
           title: (th.name ?? 'untitled').slice(0, 120),
-          content: body.content || `New thread in <#${t.parent}>`,
+          content: content || `New thread in <#${t.parent}>`,
           author: body.author || th.owner_id || 'discord',
           by: 'poller',
           src: 'discord',
@@ -303,22 +354,28 @@ export async function backfillDiscordThreads(
   const token = env.DISCORD_BOT_TOKEN;
   if (!token) return { updated: 0, remaining: 0 };
   const api = makeDiscordApi(token, fetchFn, log);
+  // Items needing work: still the placeholder, empty, or containing unresolved
+  // Discord markup (<@user>, <@&role>, <#channel>, <:emoji:>). Resolving removes
+  // the markup, so repeat runs progress and then stop.
+  const NEEDS =
+    "(content = '' OR content LIKE 'New thread in <%' OR content LIKE '%<@%' OR content LIKE '%<#%' OR content LIKE '%<:%')";
   const rows = await db
     .prepare(
       `SELECT id, url, type FROM inbox_items
-       WHERE src = 'discord' AND by = 'poller' AND (content = '' OR content LIKE 'New thread in <%')
+       WHERE src = 'discord' AND by = 'poller' AND ${NEEDS}
        LIMIT ?`,
     )
     .bind(limit)
     .all<{ id: string; url: string; type: string }>();
   const tagMaps = new Map<string, Record<string, string>>();
+  const gcache = new Map<string, GuildMaps>();
   let updated = 0;
   for (const row of rows.results ?? []) {
     const threadId = (row.url || '').split('/').pop() || '';
     if (!/^\d+$/.test(threadId)) continue;
     const th = (await api(`/channels/${threadId}`)) as DThread | null;
     if (!th) {
-      // Thread gone (deleted) — clear the placeholder so we don't retry forever.
+      // Thread gone (deleted) — mark so we don't retry forever.
       await db.prepare(`UPDATE inbox_items SET content = '(deleted)' WHERE id = ?`).bind(row.id).run();
       continue;
     }
@@ -326,7 +383,9 @@ export async function backfillDiscordThreads(
     if (!tagMaps.has(parent)) tagMaps.set(parent, await forumTagMap(api, parent));
     const tag = threadTag(th, tagMaps.get(parent) ?? {}, row.type || 'support');
     const body = await threadBody(api, threadId);
-    const content = body.content.trim() ? body.content : '(no text content)';
+    const maps = await guildMaps(api, th.guild_id || '', gcache);
+    const resolved = resolveMentions(body.content, { mentions: body.mentions }, maps.roles, maps.channels);
+    const content = resolved.trim() ? resolved : '(no text content)';
     await db
       .prepare(`UPDATE inbox_items SET content = ?, tag = ?, author = ?, title = ? WHERE id = ?`)
       .bind(content, tag, body.author || 'discord', (th.name ?? 'untitled').slice(0, 120), row.id)
@@ -336,7 +395,7 @@ export async function backfillDiscordThreads(
   const remaining = await db
     .prepare(
       `SELECT COUNT(*) AS n FROM inbox_items
-       WHERE src = 'discord' AND by = 'poller' AND (content = '' OR content LIKE 'New thread in <%')`,
+       WHERE src = 'discord' AND by = 'poller' AND ${NEEDS}`,
     )
     .first<{ n: number }>();
   return { updated, remaining: Number(remaining?.n ?? 0) };
