@@ -23,7 +23,14 @@
     '.pck-top .pck-signout:hover{border-color:var(--pck-b,#5865F2);color:#fff}' +
     '.pck-foot{border-top:1px solid var(--pck-bd,#26262b);margin-top:48px;padding:22px 16px;color:#8a8a90;font-size:12px;text-align:center}' +
     '.pck-foot img{width:20px;height:20px;border-radius:5px;vertical-align:-5px;margin-right:7px}' +
-    '.pck-foot a{color:#8a8a90;text-decoration:none}.pck-foot a:hover{color:#f0f0f2}';
+    '.pck-foot a{color:#8a8a90;text-decoration:none}.pck-foot a:hover{color:#f0f0f2}' +
+    '.pck-hero{max-width:1080px;margin:0 auto;padding:64px 20px 20px;text-align:center}' +
+    '.pck-hero .kicker{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--pck-b,#5865F2);background:rgba(88,101,242,.12);border:1px solid rgba(88,101,242,.4);border-radius:999px;padding:6px 14px;margin-bottom:18px}' +
+    '.pck-hero h1{margin:0;font-size:clamp(30px,5vw,50px);letter-spacing:-.03em;line-height:1.06;color:#f0f0f2}' +
+    '.pck-hero p{color:#8a8a90;font-size:16px;max-width:640px;margin:16px auto 0;line-height:1.6}' +
+    '.pck-hero .cta{display:flex;gap:10px;justify-content:center;margin-top:26px;flex-wrap:wrap}' +
+    '.pck-hero .cta a{background:var(--pck-b,#5865F2);color:#fff;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:700;text-decoration:none}' +
+    '.pck-hero .cta a.ghost{background:#1e1e22;border:1px solid var(--pck-bd,#26262b);color:#f0f0f2}';
   function injectCss() {
     if (document.getElementById('pck-shell-css')) return;
     var s = document.createElement('style');
@@ -77,6 +84,24 @@
     if (feats.mailSetup === false) {
       var hidden = document.querySelectorAll('[data-pck-feature="mailSetup"]');
       for (var i = 0; i < hidden.length; i++) hidden[i].style.display = 'none';
+    }
+    // Optional marketing hero — only rendered when the active environment
+    // provides one (e.g. environments.personal.hero). Other deploys stay plain.
+    var hero = document.getElementById('pck-hero');
+    if (hero) {
+      if (cfg.hero && cfg.hero.title) {
+        var cta = (cfg.hero.cta || []).map(function (c) {
+          return '<a class="' + (c.primary ? '' : 'ghost') + '" href="' + esc(c.href) + '">' + esc(c.label) + '</a>';
+        }).join('');
+        hero.className = 'pck-hero';
+        hero.innerHTML =
+          (cfg.hero.kicker ? '<div class="kicker">' + esc(cfg.hero.kicker) + '</div>' : '') +
+          '<h1>' + esc(cfg.hero.title) + '</h1>' +
+          (cfg.hero.subtitle ? '<p>' + esc(cfg.hero.subtitle) + '</p>' : '') +
+          (cta ? '<div class="cta">' + cta + '</div>' : '');
+      } else if (hero.parentNode) {
+        hero.parentNode.removeChild(hero);
+      }
     }
     if (typeof window.PCK_ON_NAV === 'function') {
       try { window.PCK_ON_NAV(); } catch (e) { /* page hook error */ }

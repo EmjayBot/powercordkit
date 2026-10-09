@@ -11,7 +11,25 @@
   "environments": {
     "personal": {
       "siteName": "PowerCordKit",
-      "header": { "brand": "PowerCordKit" }
+      "header": {
+        "brand": "PowerCordKit",
+        "links": [
+          { "label": "Tools", "href": "/" },
+          { "label": "Mail", "href": "/mail/" },
+          { "label": "Ideas", "href": "/ideas/" },
+          { "label": "Roadmap", "href": "/roadmap/" },
+          { "label": "GitHub", "href": "https://github.com/EmjayBot/powercordkit" }
+        ]
+      },
+      "hero": {
+        "kicker": "Discord mod toolsuite",
+        "title": "Every server, every forum. One inbox.",
+        "subtitle": "PowerCordKit triages ideas, support threads and tickets from all your Discord servers plus your forums into a single mod inbox — with a lab for every Discord power task around it.",
+        "cta": [
+          { "label": "Open Mail", "href": "/mail/", "primary": true },
+          { "label": "Browse tools", "href": "#labs", "primary": false }
+        ]
+      }
     }
   },
   "header": {
