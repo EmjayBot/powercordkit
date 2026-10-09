@@ -115,7 +115,7 @@ async function load(){
   try {
     const [h, inbox] = await Promise.all([
       fetch('/api/health').then(r => r.json()),
-      api('/api/inbox').then(r => { if(!r.ok) throw 0; return r.json(); })
+      api('/api/inbox').then(r => { if(!r.ok) { const err = new Error('API ' + r.status); err.status = r.status; throw err; } return r.json(); })
     ]);
     const items = inbox.items || [];
     $('api').textContent = 'API live'; $('api').className = 'pill live';
@@ -129,23 +129,15 @@ async function load(){
     col('c-tickets', t, 'No open tickets 🎉');
     col('c-ideas', ideas, 'No ideas yet.');
     col('c-recent', items, 'Inbox Zero 🎉');
-  } catch {
-    // Locked (no mod key) beats demo data: never show fake numbers as if real.
-    if (window.__pckLocked) {
-      $('api').textContent = 'Locked'; $('api').className = 'pill off';
-      $('env').textContent = 'mod key required';
-      $('s-open').textContent = '–'; $('s-tickets').textContent = '–'; $('s-ideas').textContent = '–'; $('s-unassigned').textContent = '–';
-      const locked = '<div class="empty">🔒 Enter the mod key to load.<br/><button class="unlock-btn" style="margin-top:8px;background:#5865F2;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer">Enter mod key</button></div>';
-      $('c-tickets').innerHTML = locked; $('c-ideas').innerHTML = locked; $('c-recent').innerHTML = locked;
-      document.querySelectorAll('.unlock-btn').forEach((b) => b.onclick = () => { window.__pckLocked = false; sessionStorage.removeItem('pck-mod-key'); load(); });
-      return;
-    }
-    $('api').textContent = 'API offline'; $('api').className = 'pill off';
-    $('env').textContent = 'demo mode';
-    $('s-open').textContent = '6'; $('s-tickets').textContent = '2'; $('s-ideas').textContent = '2'; $('s-unassigned').textContent = '4';
-    col('c-tickets', [{title:'Ticket #128 — spam in #help',server:'staff',author:'mod_bot',assigned:null}], '');
-    col('c-ideas', [{title:'Add slowmode to #general',server:'general',author:'jake',assigned:null}], '');
-    col('c-recent', [{title:'[Discourse] Login loop iOS',server:'discourse',author:'sarah_dev',assigned:'@mod'}], '');
+  } catch (e) {
+    // Never show fake data: this inbox only ever renders real API data.
+    const code = (e && (e.code || e.status)) || 'offline';
+    $('api').textContent = 'Locked'; $('api').className = 'pill off';
+    $('env').textContent = 'mod key required';
+    $('s-open').textContent = '–'; $('s-tickets').textContent = '–'; $('s-ideas').textContent = '–'; $('s-unassigned').textContent = '–';
+    const locked = '<div class="empty">🔒 Enter the mod key to load.<br/><button class="unlock-btn" style="margin-top:8px;background:#5865F2;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer">Enter mod key</button><div style="margin-top:10px;font-size:11px;opacity:.6">API: ' + esc(code) + '</div></div>';
+    $('c-tickets').innerHTML = locked; $('c-ideas').innerHTML = locked; $('c-recent').innerHTML = locked;
+    document.querySelectorAll('.unlock-btn').forEach((b) => b.onclick = () => { window.__pckLocked = false; sessionStorage.removeItem('pck-mod-key'); load(); });
   }
 }
 load();

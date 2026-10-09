@@ -110,30 +110,22 @@ async function load() {
     const q = $('q').value.trim();
     if (q) params.set('q', q);
     const r = await api('/api/inbox?' + params.toString());
-    if (!r.ok) throw new Error('API ' + r.status);
+    if (!r.ok) { const e2 = new Error('API ' + r.status); e2.status = r.status; throw e2; }
     const j = await r.json();
     data = j.items || [];
     $('status').textContent = data.length + ' items • Workers + D1 • E to archive';
     api('/api/servers').then((r) => r.json()).then((sj) => renderServerFilters(sj.servers || [])).catch(() => {});
-    const h = await fetch('/api/health').then(x=>x.json()).catch(()=>null);
+    const h = await fetch('/api/health', { cache: 'no-store' }).then(x=>x.json()).catch(()=>null);
     if (h) { $('env-pill').textContent = 'Inbox • ' + (h.env || 'personal'); $('api-env').textContent = (h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi') + ' (Workers + D1)'; $('hook-hint').innerHTML = 'Discourse webhook:<br/>POST ' + (h.env === 'community' ? 'https://mod.tep.one/hooks/discourse' : 'https://powercordkit.emjay.fyi/hooks/discourse'); }
   } catch (e) {
-    // Locked (no mod key) beats demo data: never show fake items as if real.
-    if (window.__pckLocked && data.length === 0) {
-      $('status').textContent = 'Locked — mod key required';
-      $('items').innerHTML = '';
-      $('detail').innerHTML = '<div style="padding:60px 20px;text-align:center;color:var(--m)"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-weight:600;color:var(--t)">Mod key required</div><div style="font-size:13px;margin:8px auto;max-width:300px;line-height:1.5">This inbox is private. Enter the mod key to load real items — nothing below is shown until then.</div><button class="abtn prim" id="unlock-btn" style="margin-top:8px">Enter mod key</button></div>';
-      $('unlock-btn').onclick = () => { window.__pckLocked = false; sessionStorage.removeItem('pck-mod-key'); load(); };
-      render();
-      return;
-    }
-    // Offline fallback: seed from original mock so UI still demos.
-    $('status').textContent = 'API offline — showing demo seed (run wrangler dev + D1 migrate)';
-    if (data.length === 0) data = [
-      {id:'1',server:'general',type:'idea',tag:'idea',author:'jake',title:'Add slowmode to #general',content:'General is getting spammed at night. Proposal: slowmode 10s after 10pm.',time:'2h ago',prio:'normal',src:'discord',by:'@mod',url:'#',assigned:null,notes:[{by:'mod',text:'Good idea, check traffic first'}]},
-      {id:'2',server:'discourse',type:'support',tag:'bug',author:'sarah_dev',title:'[Discourse] Login not working on mobile Safari',content:'Discourse login loops on iOS 17.',time:'4h ago',prio:'high',src:'discourse',by:'discourse-webhook',url:'#',assigned:'@mod',notes:[]},
-      {id:'3',server:'staff',type:'ticket',tag:'urgent',author:'mod_bot',title:'Ticket #128 — User report spam in #help',content:'New mod ticket thread auto-captured in #mod-tickets',time:'5h ago',prio:'high',src:'discord',by:'auto-capture',url:'#',assigned:null,notes:[]}
-    ];
+    // Never show fake items: this inbox only ever renders real API data.
+    const code = (e && e.status) ? ('API ' + e.status) : 'API offline';
+    $('status').textContent = 'Locked — ' + code;
+    $('items').innerHTML = '';
+    $('detail').innerHTML = '<div style="padding:60px 20px;text-align:center;color:var(--m)"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-weight:600;color:var(--t)">Mod key required</div><div style="font-size:13px;margin:8px auto;max-width:300px;line-height:1.5">This inbox is private. Enter the mod key to load real items — no sample data is ever shown.</div><button class="unlock-btn" style="margin-top:10px;background:#5865F2;color:#fff;border:0;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer">Enter mod key</button><div style="margin-top:10px;font-size:11px;opacity:.6">' + code + '</div></div>';
+    document.querySelectorAll('.unlock-btn').forEach((b) => b.onclick = () => { window.__pckLocked = false; sessionStorage.removeItem('pck-mod-key'); load(); });
+    render();
+    return;
   }
   render();
 }
