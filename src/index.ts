@@ -748,17 +748,31 @@ app.post('/api/admin/register-commands', async (c) => {
     const token = c.env.DISCORD_BOT_TOKEN;
     const appId = c.env.DISCORD_CLIENT_ID;
     if (!token || !appId) return bad('Discord not configured', 400);
+    const def = { name: 'Save as Idea', type: 3, integration_types: [0], contexts: [0, 1, 2] };
     const r = await fetch(`https://discord.com/api/v10/applications/${appId}/commands`, {
       method: 'POST',
       headers: { Authorization: 'Bot ' + token, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Save as Idea', type: 3, integration_types: [0], contexts: [0, 1, 2] }),
+      body: JSON.stringify(def),
     });
     const j = (await r.json()) as unknown;
+    // Also register in the guild for instant availability (overrides global).
+    let guildResult: unknown = null;
+    if (c.env.DISCORD_GUILD_ID) {
+      const gr = await fetch(
+        `https://discord.com/api/v10/applications/${appId}/guilds/${c.env.DISCORD_GUILD_ID}/commands`,
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bot ' + token, 'content-type': 'application/json' },
+          body: JSON.stringify(def),
+        },
+      );
+      guildResult = await gr.json();
+    }
     const info = await fetch('https://discord.com/api/v10/applications/@me', {
       headers: { Authorization: 'Bot ' + token },
     });
     const app = (await info.json()) as { id?: string; verify_key?: string };
-    return c.json({ ok: r.ok, status: r.status, command: j, appId: app.id, verifyKey: app.verify_key });
+    return c.json({ ok: r.ok, status: r.status, command: j, guildResult, appId: app.id, verifyKey: app.verify_key });
   } catch (err) {
     jsonLog('error', 'register commands failed', { error: String(err) });
     return bad('Register failed', 500);
