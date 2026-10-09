@@ -35,6 +35,7 @@ type Bindings = {
   DISCORD_GUILD_ID?: string;
   DISCORD_MOD_ROLE_ID?: string;
   DISCORD_MOD_ROLE_IDS?: string;
+  DISCORD_IDEA_ROLE_IDS?: string;
   DISCORD_COMPLETE_TAG?: string;
   DISCORD_PUBLIC_KEY?: string;
   SESSION_SECRET?: string;
@@ -703,6 +704,7 @@ app.post('/hooks/discord-interactions', async (c) => {
     type?: number;
     guild_id?: string;
     channel_id?: string;
+    member?: { roles?: string[] };
     data?: {
       type?: number;
       target_id?: string;
@@ -716,6 +718,15 @@ app.post('/hooks/discord-interactions', async (c) => {
   }
   if (body.type === 1) return c.json({ type: 1 }); // PING -> PONG
   if (body.type === 2 && body.data?.type === 3) {
+    // Only members with an allowed role may save ideas (defaults to mod roles).
+    const allowed = (c.env.DISCORD_IDEA_ROLE_IDS ?? c.env.DISCORD_MOD_ROLE_IDS ?? '')
+      .split(',')
+      .map((r) => r.trim())
+      .filter(Boolean);
+    const memberRoles = body.member?.roles ?? [];
+    if (allowed.length && !allowed.some((r) => memberRoles.includes(r))) {
+      return c.json({ type: 4, data: { content: '🔒 You don’t have permission to save ideas.', flags: 64 } });
+    }
     const targetId = body.data.target_id ?? '';
     const msg = body.data.resolved?.messages?.[targetId];
     const content = (msg?.content ?? '').slice(0, 4000);
