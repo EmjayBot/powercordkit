@@ -276,22 +276,25 @@ export async function pollDiscord(
       if (!seenIds.has(th.id)) { seenIds.add(th.id); collected.push(th); }
     }
     let before: string | undefined;
-    for (let page = 0; page < 5; page++) {
-      const q =
-        `/channels/${t.parent}/threads/archived/public?limit=100` +
-        (before ? `&before=${encodeURIComponent(before)}` : '');
-      const data = (await api(q)) as { threads?: DThread[]; has_more?: boolean } | null;
-      if (!data || !Array.isArray(data.threads) || data.threads.length === 0) break;
-      for (const th of data.threads) {
-        if (!seenIds.has(th.id)) { seenIds.add(th.id); collected.push(th); }
+    for (const kind of ['public', 'private'] as const) {
+      before = undefined;
+      for (let page = 0; page < 5; page++) {
+        const q =
+          `/channels/${t.parent}/threads/archived/${kind}?limit=100` +
+          (before ? `&before=${encodeURIComponent(before)}` : '');
+        const data = (await api(q)) as { threads?: DThread[]; has_more?: boolean } | null;
+        if (!data || !Array.isArray(data.threads) || data.threads.length === 0) break;
+        for (const th of data.threads) {
+          if (!seenIds.has(th.id)) { seenIds.add(th.id); collected.push(th); }
+        }
+        if (!data.has_more) break;
+        const times = data.threads
+          .map((x) => x.thread_metadata?.archive_timestamp)
+          .filter((x): x is string => !!x)
+          .sort();
+        before = times[0];
+        if (!before) break;
       }
-      if (!data.has_more) break;
-      const times = data.threads
-        .map((x) => x.thread_metadata?.archive_timestamp)
-        .filter((x): x is string => !!x)
-        .sort();
-      before = times[0];
-      if (!before) break;
     }
     debug('info', 'poll feed', {
       kind: 'threads',
