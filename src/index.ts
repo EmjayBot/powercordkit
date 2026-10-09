@@ -1,6 +1,18 @@
 import { Hono } from 'hono';
 import { pollDiscord } from './poll';
 import { verifyAccessJwt } from './access';
+import {
+  discordLoginUrl,
+  exchangeCode,
+  discordUser,
+  discordMemberRoles,
+  randomState,
+  signSession,
+  verifySession,
+  readCookie,
+  setCookie,
+  clearCookie,
+} from './discord-oauth';
 
 type Bindings = {
   DB: D1Database;
@@ -17,6 +29,11 @@ type Bindings = {
   MOD_API_KEY?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
+  DISCORD_CLIENT_ID?: string;
+  DISCORD_CLIENT_SECRET?: string;
+  DISCORD_GUILD_ID?: string;
+  DISCORD_MOD_ROLE_ID?: string;
+  SESSION_SECRET?: string;
   DISCORD_BOT_TOKEN?: string;
   FEED_MAP?: string;
   POLL_DEBUG?: string;
@@ -73,31 +90,96 @@ async function guardApi(
 app.use('/api/*', guardApi);
 app.use('/hooks/*', guardApi);
 
-// Mod-team gate for the API (not webhooks). Two ways in:
-//  1. Cloudflare Access: a valid signed Access JWT (mods log in via their IdP;
-//     no shared key). Active when ACCESS_TEAM_DOMAIN + ACCESS_AUD are set.
-//  2. Shared key: X-Mod-Key vs MOD_API_KEY (fallback for the workers.dev origin,
-//     scripts, and local dev). Both accepted; either grants access.
+// Mod-team gate for the API (not webhooks). Accepted, in order:
+//  1. Discord session cookie (mods log in once via /api/auth/login).
+//  2. Cloudflare Access JWT (if ACCESS_TEAM_DOMAIN + ACCESS_AUD are set).
+//  3. Shared key X-Mod-Key vs MOD_API_KEY (workers.dev origin, scripts, dev).
 app.use('/api/*', async (c, next) => {
-  if (new URL(c.req.url).pathname === '/api/health') return next();
+  const path = new URL(c.req.url).pathname;
+  if (path === '/api/health' || path.startsWith('/api/auth/')) return next();
+  if (c.env.SESSION_SECRET) {
+    const cookie = readCookie(c.req.header('cookie'), 'pck_session');
+    if (await verifySession(cookie, c.env.SESSION_SECRET)) return next();
+  }
   const team = c.env.ACCESS_TEAM_DOMAIN;
   const aud = c.env.ACCESS_AUD;
+  const accessEnabled = !!(team && aud);
   if (team && aud) {
     const jwt = c.req.header('Cf-Access-Jwt-Assertion') ?? null;
     if (await verifyAccessJwt(jwt, team, aud)) return next();
   }
   const key = c.env.MOD_API_KEY;
-  if (key) {
-    const given = c.req.header('X-Mod-Key') ?? '';
-    if (await timingSafeEqualString(given, key)) return next();
-    if (!(team && aud)) {
-      return Response.json({ ok: false, error: 'Mod key required' }, { status: 401, headers: SEC_HEADERS });
-    }
-  }
-  if (team && aud) {
-    return Response.json({ ok: false, error: 'Access login required' }, { status: 401, headers: SEC_HEADERS });
+  if (key && (await timingSafeEqualString(c.req.header('X-Mod-Key') ?? '', key))) return next();
+  const loginEnabled = !!(c.env.DISCORD_CLIENT_ID && c.env.DISCORD_CLIENT_SECRET && c.env.SESSION_SECRET);
+  if (loginEnabled || accessEnabled || key) {
+    return Response.json(
+      { ok: false, error: loginEnabled ? 'Login required' : 'Mod key required', login: loginEnabled },
+      { status: 401, headers: SEC_HEADERS },
+    );
   }
   await next();
+});
+
+// --- Discord OAuth2 login -------------------------------------------------
+function oauthRedirectUri(env: Bindings): string {
+  const base = env.COMMUNITY_DOMAIN ? `https://${env.COMMUNITY_DOMAIN}` : '';
+  return `${base}/api/auth/callback`;
+}
+
+app.get('/api/auth/login', (c) => {
+  const { DISCORD_CLIENT_ID: id, DISCORD_CLIENT_SECRET: secret, SESSION_SECRET: sess } = c.env;
+  if (!id || !secret || !sess) {
+    return new Response('Discord login is not configured.', { status: 503, headers: SEC_HEADERS });
+  }
+  const state = randomState();
+  const url = discordLoginUrl(id, oauthRedirectUri(c.env), state);
+  const headers = new Headers({ Location: url });
+  headers.append('Set-Cookie', setCookie('pck_oauth_state', state, { maxAge: 600, path: '/api/auth' }));
+  return new Response(null, { status: 302, headers });
+});
+
+app.get('/api/auth/callback', async (c) => {
+  const {
+    DISCORD_CLIENT_ID: id,
+    DISCORD_CLIENT_SECRET: secret,
+    DISCORD_GUILD_ID: guild = '633351482128728064',
+    DISCORD_MOD_ROLE_ID: role,
+    SESSION_SECRET: sess,
+  } = c.env;
+  if (!id || !secret || !sess) return new Response('Login not configured', { status: 503 });
+  const url = new URL(c.req.url);
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state');
+  const expected = readCookie(c.req.header('cookie'), 'pck_oauth_state');
+  if (!code || !state || !expected || state !== expected) {
+    return new Response('Invalid OAuth state. Please retry.', { status: 400 });
+  }
+  const token = await exchangeCode(code, id, secret, oauthRedirectUri(c.env));
+  if (!token) return new Response('Discord token exchange failed.', { status: 400 });
+  const user = await discordUser(token);
+  if (!user) return new Response('Could not read Discord profile.', { status: 400 });
+  const roles = await discordMemberRoles(token, guild);
+  if (!roles) return Response.redirect(`${oauthRedirectUri(c.env).replace('/api/auth/callback', '')}/mail/?denied=notmember`, 302);
+  if (role && !roles.includes(role)) {
+    return Response.redirect(`${oauthRedirectUri(c.env).replace('/api/auth/callback', '')}/mail/?denied=role`, 302);
+  }
+  const session = await signSession({ uid: user.id, uname: user.global_name || user.username || '', roles }, sess);
+  const headers = new Headers({ Location: '/mail/inbox/' });
+  headers.append('Set-Cookie', setCookie('pck_session', session, { maxAge: 30 * 86400 }));
+  headers.append('Set-Cookie', clearCookie('pck_oauth_state', '/api/auth'));
+  return new Response(null, { status: 302, headers });
+});
+
+app.get('/api/auth/logout', (c) => {
+  const headers = new Headers({ Location: '/mail/' });
+  headers.append('Set-Cookie', clearCookie('pck_session'));
+  return new Response(null, { status: 302, headers });
+});
+
+app.get('/api/auth/me', async (c) => {
+  const sess = c.env.SESSION_SECRET;
+  const s = sess ? await verifySession(readCookie(c.req.header('cookie'), 'pck_session'), sess) : null;
+  return c.json({ ok: true, authenticated: !!s, user: s ? { id: s.uid, name: s.uname } : null });
 });
 
 // Bounded JSON body reader: content-length can be spoofed or absent

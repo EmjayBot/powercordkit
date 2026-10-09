@@ -90,9 +90,10 @@ async function api(path, opts) {
   const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
   let r = await fetch(path, Object.assign({}, opts, { headers }));
   if (r.status === 401) {
-    let needKey = false;
-    try { needKey = (await r.clone().json()).error === 'Mod key required'; } catch (e) {}
-    if (needKey) {
+    let info = {};
+    try { info = await r.clone().json(); } catch (e) {}
+    if (info.login) { window.location.href = '/api/auth/login'; return r; }
+    if (info.error === 'Mod key required') {
       const k = prompt('This inbox needs a mod key:');
       if (k) {
         sessionStorage.setItem('pck-mod-key', k);
