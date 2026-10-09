@@ -108,11 +108,28 @@
     })
     .then(function (cfg) {
       cfg = cfg || {};
-      if (cfg.accent) {
-        document.documentElement.style.setProperty('--pck-b', cfg.accent);
-        document.documentElement.style.setProperty('--b', cfg.accent);
-      }
-      window.PCK.config = cfg;
-      render(cfg);
+      // Per-deployment branding: /api/health reports the env, and any matching
+      // `environments[env]` block overrides name/brand for that deployment.
+      return fetch('/api/health', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; })
+        .then(function (h) {
+          var env = h && h.env;
+          var envCfg = env && cfg.environments && cfg.environments[env];
+          if (envCfg && typeof envCfg === 'object') {
+            var baseHeader = cfg.header || {};
+            cfg = merge(cfg, envCfg);
+            cfg.header = merge(baseHeader, envCfg.header || {});
+          }
+          if (cfg.accent) {
+            document.documentElement.style.setProperty('--pck-b', cfg.accent);
+            document.documentElement.style.setProperty('--b', cfg.accent);
+          }
+          window.PCK.config = cfg;
+          if (document.body && document.body.hasAttribute('data-pck-title')) {
+            document.title = cfg.siteName || (cfg.header && cfg.header.brand) || document.title;
+          }
+          render(cfg);
+        });
     });
 })();

@@ -32,6 +32,7 @@ Goal: help a user **self-host the Mail inbox** end to end.
 ## Configuration & toggles
 
 - **`public/site.config.json`** (served; also at `/site.config.json`) drives branding for Tools + Mail: `siteName`, `accent`, `header { brand, logo, home, links[] }`, `footerNote`, `creditUrl` (the footer links here, default `https://powercordkit.emjay.fyi`), and `features { mailSetup }`. Edit it directly, or set `configUrl` to a raw GitHub URL for live edits (no redeploy).
+  - Per-deployment branding: add `"environments": { "personal": { "siteName": "PowerCordKit", "header": { "brand": "PowerCordKit" } } }`. The shell reads `ENVIRONMENT` from `/api/health` and merges the matching block, so one shared `public/` can brand each deployment differently.
   - `"features": { "mailSetup": false }` hides the Setup link/card and turns the `/mail-setup/` page into an "off" notice.
 - **`PUBLIC_ROADMAP`** (wrangler var, default `1`): set to `0` to make `GET /api/roadmap` require login (private roadmap). The `/roadmap/` page then shows a log-in prompt.
 - **`DEFAULT_SERVER`**, **`FEED_MAP`**, **`POLL_DEBUG`** (wrangler vars) — see below.

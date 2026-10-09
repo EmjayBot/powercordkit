@@ -8,6 +8,12 @@
   "features": {
     "mailSetup": true
   },
+  "environments": {
+    "personal": {
+      "siteName": "PowerCordKit",
+      "header": { "brand": "PowerCordKit" }
+    }
+  },
   "header": {
     "brand": "Community Toolset",
     "logo": "/assets/powercordkit_logo.png",
