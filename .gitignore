@@ -3,3 +3,7 @@ node_modules/
 .dev.vars
 dist/
 worker-configuration.d.ts
+# Your own filled-in deploy configs (keep template configs generic)
+wrangler.local.jsonc
+wrangler.community.local.jsonc
+wrangler.tools.local.jsonc

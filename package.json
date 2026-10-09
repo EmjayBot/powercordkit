@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "PowerCordKit — Discord mod tools suite + Unified Mod Inbox (powercordkit.emjay.fyi + mod.tep.one)",
+  "description": "PowerCordKit — Discord mod tools suite + Unified Mod Inbox",
   "scripts": {
     "dev": "wrangler dev",
     "dev:community": "wrangler dev --config wrangler.community.jsonc",
@@ -17,10 +17,17 @@
     "db:migrate:local:community": "wrangler d1 migrations apply powercordkit-mail-community --local --config wrangler.community.jsonc",
     "db:migrate:remote": "wrangler d1 migrations apply powercordkit-mail --remote",
     "db:migrate:remote:community": "wrangler d1 migrations apply powercordkit-mail-community --remote --config wrangler.community.jsonc",
+    "db:migrate:remote:community:local": "wrangler d1 migrations apply powercordkit-mail-community --remote --config wrangler.community.local.jsonc",
+    "db:migrate:remote:local": "wrangler d1 migrations apply powercordkit-mail --remote --config wrangler.local.jsonc",
     "secret:bot-token": "wrangler secret put DISCORD_BOT_TOKEN --config wrangler.community.jsonc",
     "build:tools": "node scripts/build-tools.mjs",
     "preview:tools": "wrangler pages dev dist/tools --port 8792",
     "deploy:tools": "npm run build:tools && wrangler deploy --config wrangler.tools.jsonc",
+    "dev:local": "wrangler dev --config wrangler.local.jsonc",
+    "deploy:local": "wrangler deploy --config wrangler.local.jsonc",
+    "dev:community:local": "wrangler dev --config wrangler.community.local.jsonc",
+    "deploy:community:local": "wrangler deploy --config wrangler.community.local.jsonc",
+    "deploy:tools:local": "npm run build:tools && wrangler deploy --config wrangler.tools.local.jsonc",
     "check": "tsc --noEmit"
   },
   "dependencies": {

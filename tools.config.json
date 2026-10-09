@@ -1,5 +1,5 @@
 {
-  "$comment": "Identity for a self-hosted tools-only site (npm run build:tools). Utility index only — no hero, no marketing. The showcase at powercordkit.emjay.fyi keeps its own look. Keep the Powered-by-PowerCordKit credit (LICENSE.md).",
+  "$comment": "Identity for a self-hosted tools-only site (npm run build:tools). Utility index only — no hero, no marketing. Keep the Powered-by-PowerCordKit credit (LICENSE.md).",
   "siteName": "Community Toolset",
   "tagline": "7 static labs for Discord mods — no account, no backend, works offline.",
   "accent": "#5865F2",

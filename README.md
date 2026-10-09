@@ -2,91 +2,41 @@
 
 Discord mod tools suite + Unified Mod Inbox.
 
-Repo: **https://github.com/EmjayBot/powercordkit** · Live labs: `emjaybot.github.io/powercordkit` (attach a custom domain — project subpaths aren't supported, see below).
+- **Tools** — self-contained labs (Embed, Color, Markdown, Timestamp, Snowflake, Webhook, Slowmode) that run anywhere static.
+- **Mail** — a unified mod inbox for Discord servers + forums: tickets, support threads, ideas, a roadmap, Discord login, and webhooks, on Cloudflare Workers + D1.
 
-- Personal suite: **https://powercordkit.emjay.fyi** (`/` hub, `/mail/` inbox) — `wrangler.jsonc`, your personal Cloudflare account
-- Community mail: **https://mod.tep.one** — `wrangler.community.jsonc`, the **community's own Cloudflare account** (separate Worker, separate D1, separate secrets)
+Stack: Cloudflare **Workers** (Hono) + Static Assets (`./public`) + **D1** (`migrations/`).
 
-Stack: Cloudflare Workers (Hono) + Static Assets (`./public`) + D1 (`migrations/`). Same codebase, two configs, two accounts.
+> Setting up with an AI assistant? Point it at **[`AI_SETUP.md`](AI_SETUP.md)** (also served at `/ai-setup.md`). Human walkthrough: `/mail-setup/`.
+
+## Copy it and make it yours
+
+Two deployable pieces, each with its own `wrangler` config. Fill in **your** values and keep a private copy locally so you can pull updates without losing them:
+
+| File | Purpose | Keep your values in (gitignored) |
+|------|---------|----------------------------------|
+| `wrangler.community.jsonc` | Mail inbox Worker (D1 + static UI) | `wrangler.community.local.jsonc` |
+| `wrangler.tools.jsonc` | Tools-only static Worker | `wrangler.tools.local.jsonc` |
+| `wrangler.jsonc` | Personal single instance | `wrangler.local.jsonc` |
+
+The committed configs are generic placeholders (no account IDs, no domains, `REPLACE_WITH_YOUR_D1_ID`). Deploy your filled-in copy with `npm run deploy:community:local` (etc.), or just edit the committed files if you don't expect to pull template updates.
 
 ## Tools (`/` hub)
 
 | Tool | Route | Backend |
 |------|-------|---------|
-| Mod Mail — Overview dashboard | `/mail/` | D1 (`/api/inbox` stats + queues) |
+| Mod Mail — Overview | `/mail/` | D1 (`/api/inbox` stats + queues) |
 | Mod Mail — Unified Inbox | `/mail/inbox/` | D1 (`/api/inbox`, `/hooks/*`) |
 | Color Lab | `/color/` | Static only (clipboard) |
 | Embed Lab | `/embeds/` | Static + optional POST to Mail |
 | Slowmode Planner | `/slowmode/` | Static + optional POST to Mail |
 | Ticket Triage | `/tickets/` | D1 via Mail API (`type=ticket`) |
 | Idea Capture | `/ideas/` | D1 via Mail API (`type=idea`) |
+| Roadmap | `/roadmap/` | D1 via Mail API (`/api/roadmap`) |
 | Timestamp Lab | `/timestamp/` | Static only (clipboard) |
 | Snowflake Lab | `/snowflake/` | Static only |
 | Markdown Lab | `/markdown/` | Static only (clipboard) |
 | Webhook Lab | `/webhook/` | Direct browser POST to Discord |
-
-## Tools-only site (e.g. tools.tep.one)
-
-Anyone can run the labs without the Mail backend. `npm run build:tools`
-packages `./public` into `dist/tools/`: drops Mail/Tickets/Ideas, swaps the
-hub's Mail + API sections for a **Mail setup guide** card (`/mail-setup/`,
-included), repoints Mail links to the guide — and generates a blank-slate
-utility hub (tool cards, the setup card, and the Powered-by-PowerCordKit
-footer — no hero, no marketing) skinned from `tools.config.json` (`siteName`,
-`tagline`, `accent`, `baseUrl`, `footerNote`, plus a custom `header` with
-your own `brand`, `logo` and `links`). Forks set their own name and links: `baseUrl: "/"` for
-domain root, `"/my-tools/"` for a subpath (this also makes GitHub Pages
-project sites work). Lab cards and CSS are lifted from the showcase hub so
-they never drift. Copy the config to e.g. `tools.tep.json`, tweak, and
-build with `node scripts/build-tools.mjs --config tools.tep.json`. The
-Powered-by-PowerCordKit credit is enforced by the build (LICENSE.md).
-
-```powershell
-npm run build:tools        # → dist/tools/ (gitignored)
-npm run preview:tools     # local check on :8792
-npm run deploy:tools      # Worker "powercordkit-tools" (wrangler.tools.jsonc, static only)
-```
-
-`deploy:tools` serves `dist/tools` from a backend-free Worker
-(`src/tools.ts`) in the community account — no D1, no secrets — with
-`tools.tep.one` attached via routes. Then add DNS: `CNAME tools →
-&lt;worker&gt;.workers.dev`, proxied ON. Same root-hosting rule as below:
-custom domain or user site, no project subpaths. To run with a different
-inbox later, just deploy the full
-Worker (Mail setup guide at `/mail-setup/`) — the labs are identical.
-
-## Use it anywhere (with credit)
-
-The labs are free to use on the hosted site, embed via iframe, or self-host
-(`npm run build:tools`, guide at `/mail-setup/#tools-only`). The only
-condition (`LICENSE.md`, MIT + credit): keep the **“Powered by PowerCordKit”**
-footer credit and link-back on any copy, embed, or self-hosted toolset.
-
-## GitHub Pages (static labs)
-
-Everything in `./public` except Mail's `/api` + `/hooks` is pure static and
-runs on GitHub Pages: push to `main` and `.github/workflows/pages.yml`
-publishes `./public` (`.nojekyll` + `404.html` included).
-
-- Works fully on Pages: Color, Embed, Timestamp, Snowflake, Markdown,
-  Webhook, Slowmode, hub. Mail/Tickets/Ideas load but show their offline
-  demo state (no D1 on Pages).
-- Requires root hosting: a **custom domain** (e.g. `powercordkit.emjay.fyi`)
-  or a user site (`<user>.github.io`). Project subpaths
-  (`<user>.github.io/<repo>/`) are not supported (absolute paths).
-
-## Hardening (per full-bundle spec)
-
-- Security headers on `/api/*` + `/hooks/*` (HSTS, nosniff, DENY framing,
-  `default-src 'none'`), 413 over 256KB (`MAX_PAYLOAD_BYTES`).
-- Generic forum adapters: `POST /hooks/:name` for `discord`, `discourse`,
-  `nodebb`, `flarum`, `lemmy`, `custom` (content truncated to 4000,
-  `X-Forum-Secret` vs `FORUM_WEBHOOK_SECRET`, falls back to
-  `DISCORD_WEBHOOK_SECRET`). To add a forum: extend `FORUM_ADAPTERS` in
-  `src/index.ts` — no other changes needed.
-- Retention: daily cron (`0 3 * * *`) deletes inbox items + notes older
-  than 90 days.
-- Webhook Lab guards: https-only, Discord hosts only, no private targets.
 
 ## Quick start (local)
 
@@ -100,54 +50,69 @@ npm run dev
 # open http://localhost:8787/ and http://localhost:8787/mail/
 ```
 
-Community config locally (same machine, no login needed for local D1):
+Community config locally (no login needed for local D1):
 
 ```powershell
 npm run db:migrate:local:community
 npm run dev:community
 ```
 
-## Personal deploy (your account — already live)
+## Deploy the Mail inbox
 
-Worker `powercordkit` → https://powercordkit.emjay-74c.workers.dev, D1 `powercordkit-mail`.
-
-```powershell
-npm run db:migrate:remote
-npm run deploy
-wrangler secret put DISCOURSE_WEBHOOK_SECRET
-wrangler secret put DISCORD_WEBHOOK_SECRET
-```
-
-Custom domain: add `powercordkit.emjay.fyi` via dashboard (Workers > powercordkit > Settings > Domains) once the zone is in your account.
-
-## Community deploy (community account — handoff)
-
-Run these **logged in as the community account** (`wrangler logout && wrangler login`):
+Fill in `wrangler.community.jsonc` (or your `wrangler.community.local.jsonc`), then:
 
 ```powershell
-# 1. Create + wire the community D1 (paste database_id into wrangler.community.jsonc)
-npm run db:create:community
+npm run db:create:community          # paste the printed database_id into the config
 npm run db:migrate:remote:community
-
-# 2. Fresh webhook secrets (generate new — do NOT reuse personal secrets)
-#    Save values for the Discourse/Discord config below, then:
-wrangler secret put DISCOURSE_WEBHOOK_SECRET --config wrangler.community.jsonc
-wrangler secret put DISCORD_WEBHOOK_SECRET --config wrangler.community.jsonc
-
-# 3. Deploy
+# set secrets (wrangler secret put <NAME> --config wrangler.community.jsonc):
+#   DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, SESSION_SECRET, DISCORD_GUILD_ID,
+#   DISCORD_MOD_ROLE_IDS, DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN,
+#   DISCORD_WEBHOOK_SECRET, DISCOURSE_WEBHOOK_SECRET, ...
 npm run deploy:community
 ```
 
-Then log back into your account (`wrangler logout && wrangler login`) for personal work.
+Full, accurate steps (Discord app, login, poller, "Save as Idea", webhooks, roadmap, verification, troubleshooting) live in **[`AI_SETUP.md`](AI_SETUP.md)** / `/mail-setup/`.
 
-Custom domain: add `mod.tep.one` via dashboard in the community account, or uncomment the `routes` line in `wrangler.community.jsonc` once `tep.one` zone is there.
+## Deploy the tools-only site
 
-> Note: `e18ad581-…` (powercordkit-mail-community) and Worker `powercordkit-community` currently exist in the **personal** account from initial setup. Delete them there after the community account is live to avoid confusion.
+Anyone can run the labs without the Mail backend:
+
+```powershell
+npm run build:tools        # → dist/tools/ (gitignored)
+npm run preview:tools      # local check on :8792
+npm run deploy:tools       # Worker "powercordkit-tools" (static only)
+```
+
+`build-tools` packages `./public` into `dist/tools/`, dropping Mail/Tickets/Ideas and generating a clean hub (tool cards + the setup card + the Powered-by-PowerCordKit footer — no hero, no marketing). Branding comes from `public/site.config.json` (`siteName`, `accent`, `header { brand, logo, home, links[] }`, `footerNote`, `creditUrl`) and `tools.config.json`. Forks set their own name/links; `baseUrl: "/"` for a domain root or `"/my-tools/"` for a subpath (also makes GitHub Pages project sites work).
+
+```powershell
+node scripts/build-tools.mjs --config tools.my.json --out dist/tools
+```
+
+## Configuration & toggles
+
+- **`public/site.config.json`** — header/links/accent/footer for Tools + Mail (`creditUrl` is where the footer credit links). Edit directly, or set `configUrl` to a raw GitHub URL for live edits without redeploying.
+  - `"features": { "mailSetup": false }` hides the setup guide link/card and turns the `/mail-setup/` page into an "off" notice.
+- **`PUBLIC_ROADMAP`** (wrangler var) — `1` (default) public roadmap, `0` requires login.
+- **`MAX_PAYLOAD_BYTES`** — webhook body cap, default 256 KB.
 
 ## Webhooks
 
-- Discourse: Admin > Webhooks > `POST https://<host>/hooks/discourse` with `X-Discourse-Event-Signature: sha256=<hmac>`, secret = that env's `DISCOURSE_WEBHOOK_SECRET`.
-- Discord bot / context menu: `POST https://<host>/hooks/discord` with header `X-Powercordkit-Secret`, JSON `{server,type,title,content,author,by,url,prio}`.
+- Discord: `POST /hooks/discord` header `X-Powercordkit-Secret`, JSON `{server,type,title,content,author,by,url,prio}`.
+- Discourse: `POST /hooks/discourse`, secret = `DISCOURSE_WEBHOOK_SECRET` (`X-Discourse-Event-Signature`).
+- Other forums: `POST /hooks/:name` for `nodebb`, `flarum`, `lemmy`, `custom` (header `X-Forum-Secret`). Extend `FORUM_ADAPTERS` in `src/index.ts` to add one.
 
-Personal host today: `powercordkit.emjay-74c.workers.dev` (later `powercordkit.emjay.fyi`).
-Community host: workers.dev URL printed by `deploy:community` (later `mod.tep.one`).
+## GitHub Pages (static labs)
+
+Everything in `./public` except Mail's `/api` + `/hooks` is static and runs on GitHub Pages (`.nojekyll` + `404.html` included). Mail pages load but show their offline state (no D1). Requires root hosting (custom domain or a user site) — project subpaths aren't supported.
+
+## Hardening
+
+- Security headers on `/api/*` + `/hooks/*`; 413 over `MAX_PAYLOAD_BYTES` (256 KB).
+- Content is truncated (poller 4000, webhook 20000); prepared statements only.
+- Discord login is role-gated; sessions are signed (`HttpOnly; Secure; SameSite=Lax`).
+- Retention: daily cron (`0 3 * * *`) deletes items + notes older than 90 days.
+
+## Credit
+
+MIT (`LICENSE.md`). The one condition: keep the **"Powered by PowerCordKit"** footer credit and link-back on any copy, embed, or self-hosted toolset.
