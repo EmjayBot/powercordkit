@@ -18,6 +18,9 @@
     '.pck-top .pck-links a:hover{background:#1e1e22;color:#f0f0f2}' +
     '.pck-top .pck-right{margin-left:auto;display:flex;gap:8px;align-items:center}' +
     '.pck-top .pck-right .pill{font-size:11px;font-weight:700;background:#1e1e22;border:1px solid var(--pck-bd,#26262b);border-radius:999px;padding:5px 11px;color:#8a8a90}' +
+    '.pck-top .pck-auth{display:flex;gap:8px;align-items:center}' +
+    '.pck-top .pck-signout{background:#1e1e22;border:1px solid var(--pck-bd,#26262b);color:#c9c9cf;border-radius:8px;padding:6px 11px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;font-family:inherit}' +
+    '.pck-top .pck-signout:hover{border-color:var(--pck-b,#5865F2);color:#fff}' +
     '.pck-foot{border-top:1px solid var(--pck-bd,#26262b);margin-top:48px;padding:22px 16px;color:#8a8a90;font-size:12px;text-align:center}' +
     '.pck-foot img{width:20px;height:20px;border-radius:5px;vertical-align:-5px;margin-right:7px}' +
     '.pck-foot a{color:#8a8a90;text-decoration:none}.pck-foot a:hover{color:#f0f0f2}';
@@ -46,8 +49,24 @@
         '<a class="pck-brand" href="' + esc(home) + '"><img src="' + esc(logo) + '" alt="" />' + esc(brand) + '</a>' +
         '<div class="pck-links">' +
         links.map(function (l) { return '<a href="' + esc(l.href) + '">' + esc(l.label) + '</a>'; }).join('') +
-        '</div><div class="pck-right" id="pck-right"></div>';
+        '</div><div class="pck-right" id="pck-right"></div><div class="pck-auth" id="pck-auth"></div>';
     }
+    // Sign-out control: show when the user is logged in (Discord session) or a
+    // mod key is stored in this browser. Clears both, then ends the session.
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (me) {
+        var hasKey = false;
+        try { hasKey = !!sessionStorage.getItem('pck-mod-key'); } catch (e) { /* ignore */ }
+        var auth = document.getElementById('pck-auth');
+        if (!auth || !((me && me.authenticated) || hasKey)) return;
+        var name = me && me.user && me.user.name ? esc(me.user.name) + ' · ' : '';
+        auth.innerHTML = '<a class="pck-signout" href="/api/auth/logout"><span style="opacity:.7">' + name + '</span>Log out</a>';
+        auth.firstChild.addEventListener('click', function () {
+          try { sessionStorage.removeItem('pck-mod-key'); } catch (e) { /* ignore */ }
+        });
+      });
     var foot = document.getElementById('pck-foot');
     if (foot) {
       foot.className = 'pck-foot';
