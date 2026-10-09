@@ -183,7 +183,7 @@ function render() {
   data.forEach((d) => {
     const el = document.createElement('div');
     el.className = 'item' + (sel && sel.id === d.id ? ' sel' : '');
-    el.innerHTML = '<div class="av">' + esc((d.author || '?')[0].toUpperCase()) + '</div><div style="flex:1;min-width:0"><div class="meta"><span class="badge">' + esc(d.src) + '</span><span class="badge">' + esc(d.server) + '</span>' + (d.tag ? '<span class="badge">' + esc(d.tag) + '</span>' : '') + (d.assigned ? '<span class="badge">👤 ' + esc(d.assigned) + '</span>' : '') + '<span>' + esc(d.time || '') + '</span></div><div class="title">' + esc(d.title) + '</div><div class="prev">' + esc((d.content || '').slice(0, 75)) + '...</div></div>';
+    el.innerHTML = '<div class="av">' + esc((d.author || '?')[0].toUpperCase()) + '</div><div style="flex:1;min-width:0"><div class="meta"><span class="badge">' + esc(d.src) + '</span><span class="badge">' + esc(d.server) + '</span>' + (d.tag ? '<span class="badge">' + esc(d.tag) + '</span>' : '') + (d.assigned ? '<span class="badge">👤 ' + esc(d.assigned) + '</span>' : '') + '<span>' + esc(d.author || '') + '</span><span>' + esc(d.time || '') + '</span></div><div class="title">' + esc(d.title) + '</div><div class="prev">' + esc((d.content || '').slice(0, 75)) + '...</div></div>';
     el.onclick = () => select(d.id);
     c.appendChild(el);
   });
@@ -196,7 +196,7 @@ function select(id) {
   const det = $('detail');
   det.innerHTML =
     '<div style="padding:14px;border-bottom:1px solid #26262b;display:flex;justify-content:space-between;align-items:center"><div><span class="badge">' + esc(sel.src) + '</span> ' + esc(sel.server) + ' / ' + esc(sel.type) + (sel.tag ? ' / ' + esc(sel.tag) : '') + '</div><div>' + (sel.archived ? '<button class="abtn prim" id="arch-btn">Reopen</button>' : '<button class="abtn prim" id="arch-btn">Complete (E)</button>') + ' <button class="abtn" id="jump-btn">Jump ↗</button></div></div>' +
-    '<div class="content"><div style="font-size:11px;color:var(--m)">Mailed by ' + esc(sel.by) + ' • Assigned ' + esc(sel.assigned || 'Unassigned') + ' • <a href="#" id="assign-link" style="color:#5865F2">assign to me</a></div>' +
+    '<div class="content"><div style="font-size:11px;color:var(--m)">Posted by ' + esc(sel.author || 'unknown') + ' • Mailed by ' + esc(sel.by) + ' • Assigned ' + esc(sel.assigned || 'Unassigned') + ' • <a href="#" id="assign-link" style="color:#5865F2">assign to me</a></div>' +
     '<h2 style="font-size:18px;margin:10px 0">' + esc(sel.title) + '</h2>' +
     (sel.url && sel.url !== '#' ? '<div style="margin-bottom:10px"><a href="' + esc(sel.url) + '" target="_blank" rel="noopener" style="color:#5865F2;font-size:12px">Open in Discord ↗</a></div>' : '') +
     '<div class="box">' + md(sel.content) + '</div>' +

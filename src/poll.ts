@@ -73,7 +73,8 @@ type DThread = {
 };
 type DStarter = {
   content?: string;
-  author?: { username?: string; global_name?: string };
+  author?: { username?: string; global_name?: string; bot?: boolean };
+  webhook_id?: string;
   mentions?: { id: string; global_name?: string; username?: string }[];
   mention_roles?: string[];
 };
@@ -273,24 +274,30 @@ export async function threadStarter(
   };
 }
 
-// Best-effort post body: the starter message, else the first message in the
-// thread that actually has text. Guards against posts whose starter is empty.
+// Best-effort post body: the starter message, else the OLDEST messages in the
+// thread (ticket threads aren't created from a message, so the opener is the
+// first human message). Returns the human opener's text + name.
 export async function threadBody(
   api: DiscordApi,
   threadId: string,
 ): Promise<{ content: string; author: string; mentions: NonNullable<DStarter['mentions']> }> {
   const starter = await threadStarter(api, threadId);
   if (starter.content.trim()) return starter;
-  const msgs = (await api(`/channels/${threadId}/messages?limit=20`)) as DStarter[] | null;
-  if (Array.isArray(msgs)) {
-    const hit = msgs.find((m) => (m.content ?? '').trim().length > 0);
-    if (hit) {
-      return {
-        content: (hit.content ?? '').slice(0, 4000),
-        author: starter.author || hit.author?.global_name || hit.author?.username || '',
-        mentions: hit.mentions ?? [],
-      };
-    }
+  // Messages come newest-first; reverse to oldest-first and take the first
+  // human (non-bot) message with text — the ticket opener.
+  const msgs = (await api(`/channels/${threadId}/messages?limit=100`)) as DStarter[] | null;
+  if (Array.isArray(msgs) && msgs.length > 0) {
+    const ordered = [...msgs].reverse();
+    const isBot = (m: DStarter) => !!m.author?.bot || !!m.webhook_id;
+    const human = ordered.find((m) => !isBot(m) && (m.content ?? '').trim().length > 0);
+    const hit = human ?? ordered.find((m) => (m.content ?? '').trim().length > 0) ?? ordered[0];
+    const name =
+      (human?.author?.global_name || human?.author?.username) ||
+      starter.author ||
+      hit.author?.global_name ||
+      hit.author?.username ||
+      '';
+    return { content: (hit.content ?? '').slice(0, 4000), author: name, mentions: hit.mentions ?? [] };
   }
   return starter;
 }
@@ -456,6 +463,7 @@ export async function backfillDiscordThreads(
   limit = 40,
   fetchFn: typeof fetch = fetch,
   log: Logger = noopLog,
+  opts: { force?: boolean; type?: string; offset?: number } = {},
 ): Promise<{ updated: number; remaining: number }> {
   const token = env.DISCORD_BOT_TOKEN;
   if (!token) return { updated: 0, remaining: 0 };
@@ -465,14 +473,15 @@ export async function backfillDiscordThreads(
   // the markup, so repeat runs progress and then stop.
   const NEEDS =
     "(content = '' OR content LIKE 'New thread in <%' OR content LIKE '%<@%' OR content LIKE '%<#%' OR content LIKE '%<:%')";
-  const rows = await db
-    .prepare(
-      `SELECT id, url, type FROM inbox_items
-       WHERE src = 'discord' AND by = 'poller' AND ${NEEDS}
-       LIMIT ?`,
-    )
-    .bind(limit)
-    .all<{ id: string; url: string; type: string }>();
+  const filter = opts.force ? '1=1' : NEEDS;
+  const typeClause = opts.type ? ' AND type = ?' : '';
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const rowsSql =
+    `SELECT id, url, type, archived FROM inbox_items
+     WHERE src = 'discord' AND by = 'poller' AND ${filter}${typeClause}
+     ORDER BY id LIMIT ? OFFSET ?`;
+  const binds: unknown[] = opts.type ? [opts.type, limit, offset] : [limit, offset];
+  const rows = await db.prepare(rowsSql).bind(...binds).all<{ id: string; url: string; type: string; archived: number }>();
   const tagMaps = new Map<string, Record<string, string>>();
   const gcache = new Map<string, GuildMaps>();
   let updated = 0;
@@ -487,7 +496,8 @@ export async function backfillDiscordThreads(
     }
     const parent = th.parent_id || '';
     if (!tagMaps.has(parent)) tagMaps.set(parent, await forumTagMap(api, parent));
-    const tag = threadTag(th, tagMaps.get(parent) ?? {}, row.type || 'support');
+    // Never clobber the completion tag on archived items.
+    const tag = row.archived ? 'Completed' : threadTag(th, tagMaps.get(parent) ?? {}, row.type || 'support');
     const body = await threadBody(api, threadId);
     const maps = await guildMaps(api, th.guild_id || '', gcache);
     const resolved = resolveMentions(body.content, { mentions: body.mentions }, maps.roles, maps.channels);
@@ -498,11 +508,17 @@ export async function backfillDiscordThreads(
       .run();
     updated++;
   }
-  const remaining = await db
-    .prepare(
-      `SELECT COUNT(*) AS n FROM inbox_items
-       WHERE src = 'discord' AND by = 'poller' AND ${NEEDS}`,
-    )
-    .first<{ n: number }>();
-  return { updated, remaining: Number(remaining?.n ?? 0) };
+  const remaining = opts.force
+    ? 0
+    : Number(
+        (
+          await db
+            .prepare(
+              `SELECT COUNT(*) AS n FROM inbox_items
+               WHERE src = 'discord' AND by = 'poller' AND ${NEEDS}`,
+            )
+            .first<{ n: number }>()
+        )?.n ?? 0,
+      );
+  return { updated, remaining };
 }

@@ -665,14 +665,18 @@ app.post('/api/admin/resync-completed', async (c) => {
 app.post('/api/admin/backfill-threads', async (c) => {
   try {
     const limit = Math.min(Math.max(Number(c.req.query('limit') ?? '40') || 40, 1), 100);
+    const force = c.req.query('force') === '1';
+    const type = c.req.query('type') || undefined;
+    const offset = Math.max(Number(c.req.query('offset') ?? '0') || 0, 0);
     const r = await backfillDiscordThreads(
       c.env.DB,
       c.env,
       limit,
       fetch,
       (level, msg, extra) => jsonLog(level, msg, extra),
+      { force, type, offset },
     );
-    return c.json({ ok: true, ...r });
+    return c.json({ ok: true, ...r, offset });
   } catch (err) {
     jsonLog('error', 'backfill threads failed', { error: String(err) });
     return bad('Backfill failed', 500);
