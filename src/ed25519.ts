@@ -20,8 +20,8 @@ export async function verifyEd25519(
   const sig = hexToBytes(signatureHex);
   for (const alg of ['Ed25519', 'NODE-ED25519'] as const) {
     try {
-      const key = await crypto.subtle.importKey('raw', raw, { name: alg } as unknown as AlgorithmIdentifier, false, ['verify']);
-      const ok = await crypto.subtle.verify({ name: alg } as unknown as AlgorithmIdentifier, key, sig, message);
+      const key = await crypto.subtle.importKey('raw', raw, { name: alg } as never, false, ['verify']);
+      const ok = await crypto.subtle.verify({ name: alg } as never, key, sig, message);
       if (ok) return true;
     } catch {
       // algorithm unsupported here; try the next

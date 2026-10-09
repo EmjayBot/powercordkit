@@ -754,7 +754,11 @@ app.post('/api/admin/register-commands', async (c) => {
       body: JSON.stringify({ name: 'Save as Idea', type: 3, integration_types: [0], contexts: [0, 1, 2] }),
     });
     const j = (await r.json()) as unknown;
-    return c.json({ ok: r.ok, status: r.status, command: j });
+    const info = await fetch('https://discord.com/api/v10/applications/@me', {
+      headers: { Authorization: 'Bot ' + token },
+    });
+    const app = (await info.json()) as { id?: string; verify_key?: string };
+    return c.json({ ok: r.ok, status: r.status, command: j, appId: app.id, verifyKey: app.verify_key });
   } catch (err) {
     jsonLog('error', 'register commands failed', { error: String(err) });
     return bad('Register failed', 500);
