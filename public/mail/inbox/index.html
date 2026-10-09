@@ -91,7 +91,7 @@ function renderFilters(servers, types) {
     const shown = serversCache.filter((s) => s.count > 0);
     if (fS !== 'all' && !shown.some((s) => s.server === fS)) fS = 'all';
     const total = serversCache.reduce((a, s) => a + s.count, 0);
-    box.innerHTML = '<div class="srv' + (fS === 'all' ? ' active' : '') + '" data-server="all"><span>All Servers</span><span>' + total + '</span></div>' +
+    box.innerHTML = '<div class="srv' + (fS === 'all' ? ' active' : '') + '" data-server="all"><span>All Servers</span><span id="c-all">' + total + '</span></div>' +
       shown.map((s) => '<div class="srv' + (fS === s.server ? ' active' : '') + '" data-server="' + esc(s.server) + '"><span>' + esc(s.server) + (s.locked ? ' 🔒' : '') + '</span><span>' + s.count + '</span></div>').join('');
     const selEl = $('m-server');
     if (selEl) {
@@ -141,8 +141,11 @@ async function load() {
 }
 
 function render() {
-  const c = $('items'); c.innerHTML = '';
-  $('c-all').textContent = data.length;
+  const c = $('items');
+  if (!c) return;
+  c.innerHTML = '';
+  const ca = $('c-all');
+  if (ca) ca.textContent = data.length;
   if (data.length === 0) {
     c.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--m)"><div style="font-size:26px;margin-bottom:8px">🔍</div><div style="font-size:13px">No items match this filter.</div><button class="abtn" id="clear-filters" style="margin-top:10px">Show all</button></div>';
     const cb = $('clear-filters');
