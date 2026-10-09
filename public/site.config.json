@@ -1,9 +1,13 @@
 {
-  "$comment": "Single identity for this deployment (Tools + Mail). Edit brand/links/accent here — no rebuild needed. Keep the 'Powered by PowerCordKit' credit (LICENSE.md). PowerCordKit marketing/hero does NOT belong on this site.",
+  "$comment": "Single identity for this deployment (Tools + Mail). Edit brand/links/accent here, or point configUrl at a raw GitHub file to edit it live without redeploying. PowerCordKit marketing/hero does NOT belong on this site.",
   "siteName": "Community Toolset",
   "tagline": "Discord mod tools and a unified mail inbox.",
   "accent": "#5865F2",
   "baseUrl": "/",
+  "configUrl": "",
+  "features": {
+    "mailSetup": true
+  },
   "header": {
     "brand": "Community Toolset",
     "logo": "/assets/powercordkit_logo.png",

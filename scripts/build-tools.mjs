@@ -43,8 +43,12 @@ for (const l of links) {
     process.exit(1);
   }
 }
-// Tools-only site: drop nav links to routes that don't exist here.
+// Tools-only site: drop nav links to routes that don't exist here, and to the
+// setup guide when that feature is turned off.
+const features = identity.features && typeof identity.features === 'object' ? identity.features : {};
+const showSetup = features.mailSetup !== false;
 const PRUNED = ['/mail/', '/tickets/', '/ideas/'];
+if (!showSetup) PRUNED.push('/mail-setup/');
 const toolLinks = links.filter((l) => !PRUNED.some((p) => l.href === p || l.href.startsWith(p)));
 let base = identity.baseUrl;
 if (!base.startsWith('/')) {
@@ -104,11 +108,11 @@ const hub = `<!DOCTYPE html>
 </div>
 <div class="wrap" style="padding-top:24px;max-width:1080px">
   <div class="grid" id="tools">${labs}
-    <a class="card" href="/mail-setup/"><h3>Mail setup guide</h3><p>Self-host the inbox in ~20 minutes: Worker, D1, secrets, domain, Discourse + Discord wiring.</p></a>
+    ${showSetup ? '<a class="card" href="/mail-setup/"><h3>Setup guide</h3><p>Self-host the inbox in ~20 minutes: Worker, D1, secrets, domain, Discourse + Discord wiring.</p></a>' : ''}
   </div>
 </div>
 <div class="foot"><div class="in" style="justify-content:center">
-  <span>${identity.footerNote}</span>
+  <span><img src="${escAttr(logo)}" alt="" style="width:20px;height:20px;border-radius:5px;vertical-align:-5px;margin-right:7px" />${identity.footerNote}</span>
 </div></div>
 </body>
 </html>
@@ -128,6 +132,7 @@ writeFileSync(
     {
       siteName: identity.siteName,
       accent: identity.accent,
+      features: { mailSetup: showSetup },
       header: {
         brand,
         logo,
