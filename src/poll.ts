@@ -31,6 +31,7 @@ export type PollDb = {
 export type PollEnv = {
   DISCORD_BOT_TOKEN?: string;
   FEED_MAP?: string;
+  POLL_DEBUG?: string;
 };
 
 export type Logger = (level: string, msg: string, extra?: Record<string, unknown>) => void;
@@ -98,10 +99,12 @@ export async function pollDiscord(
       .run();
   };
   let mailed = 0;
+  const debug = env.POLL_DEBUG === '1' ? log : noopLog;
   // Channel messages (MESSAGE_CREATE equivalent).
   for (const f of map.channels) {
     const last = await getMark('msg:' + f.channel);
     const msgs = (await api(`/channels/${f.channel}/messages?limit=25` + (last ? `&after=${last}` : ''))) as DMsg[] | null;
+    debug('info', 'poll feed', { kind: 'messages', server: f.server, channel: f.channel, last: last || '(none)', got: Array.isArray(msgs) ? msgs.length : 'error' });
     if (!Array.isArray(msgs)) continue;
     const fresh = msgs
       .filter((m) => !m.author?.bot && (!last || newer(m.id, last)))
@@ -130,6 +133,7 @@ export async function pollDiscord(
     const data = (await api(`/channels/${t.parent}/threads/active`)) as {
       threads?: { id: string; name?: string; owner_id?: string }[];
     } | null;
+    debug('info', 'poll feed', { kind: 'threads', server: t.server, parent: t.parent, got: data && Array.isArray(data.threads) ? data.threads.length : 'error' });
     for (const th of data?.threads ?? []) {
       const seen = await db.prepare('SELECT 1 FROM seen_threads WHERE thread_id = ?').bind(th.id).first();
       if (seen) continue;

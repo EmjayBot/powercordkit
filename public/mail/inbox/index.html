@@ -73,6 +73,8 @@ async function api(path, opts) {
         sessionStorage.setItem('pck-mod-key', k);
         headers['X-Mod-Key'] = k;
         r = await fetch(path, Object.assign({}, opts, { headers }));
+      } else {
+        window.__pckLocked = true;
       }
     }
   }
@@ -116,6 +118,15 @@ async function load() {
     const h = await fetch('/api/health').then(x=>x.json()).catch(()=>null);
     if (h) { $('env-pill').textContent = 'Inbox • ' + (h.env || 'personal'); $('api-env').textContent = (h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi') + ' (Workers + D1)'; $('hook-hint').innerHTML = 'Discourse webhook:<br/>POST ' + (h.env === 'community' ? 'https://mod.tep.one/hooks/discourse' : 'https://powercordkit.emjay.fyi/hooks/discourse'); }
   } catch (e) {
+    // Locked (no mod key) beats demo data: never show fake items as if real.
+    if (window.__pckLocked && data.length === 0) {
+      $('status').textContent = 'Locked — mod key required';
+      $('items').innerHTML = '';
+      $('detail').innerHTML = '<div style="padding:60px 20px;text-align:center;color:var(--m)"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-weight:600;color:var(--t)">Mod key required</div><div style="font-size:13px;margin:8px auto;max-width:300px;line-height:1.5">This inbox is private. Enter the mod key to load real items — nothing below is shown until then.</div><button class="abtn prim" id="unlock-btn" style="margin-top:8px">Enter mod key</button></div>';
+      $('unlock-btn').onclick = () => { window.__pckLocked = false; sessionStorage.removeItem('pck-mod-key'); load(); };
+      render();
+      return;
+    }
     // Offline fallback: seed from original mock so UI still demos.
     $('status').textContent = 'API offline — showing demo seed (run wrangler dev + D1 migrate)';
     if (data.length === 0) data = [

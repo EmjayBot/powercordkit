@@ -591,10 +591,12 @@ app.post('/hooks/:name', async (c) => {
 
 // Live server registry, derived from actual inbox data — works for any number
 // of servers with zero configuration. `locked` = a per-server token exists.
+// Servers with only archived items still list (count 0) so filters never
+// fall back to demo values on a freshly-triaged inbox.
 app.get('/api/servers', async (c) => {
   try {
     const res = await c.env.DB.prepare(
-      `SELECT server, type, COUNT(*) AS n FROM inbox_items WHERE archived = 0 GROUP BY server, type ORDER BY server`,
+      `SELECT server, type, SUM(CASE WHEN archived = 0 THEN 1 ELSE 0 END) AS n FROM inbox_items GROUP BY server, type ORDER BY server`,
     ).all<{ server: string; type: string; n: number }>();
     const map = new Map<string, { server: string; count: number; types: Set<string> }>();
     for (const r of res.results ?? []) {
@@ -693,7 +695,13 @@ export default {
       return;
     }
     try {
-      const r = await pollDiscord(env.DB, env, (input, fb) => insertInboxItem(env.DB, input, fb));
+      const r = await pollDiscord(
+        env.DB,
+        env,
+        (input, fb) => insertInboxItem(env.DB, input, fb),
+        fetch,
+        (level, msg, extra) => jsonLog(level, msg, extra),
+      );
       if ((r.mailed ?? 0) > 0 || r.skipped !== 'no-bot-token') jsonLog('info', 'discord poll', r);
     } catch (err) {
       jsonLog('error', 'discord poll failed', { error: String(err) });
