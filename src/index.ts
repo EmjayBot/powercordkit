@@ -33,6 +33,7 @@ type Bindings = {
   DISCORD_CLIENT_SECRET?: string;
   DISCORD_GUILD_ID?: string;
   DISCORD_MOD_ROLE_ID?: string;
+  DISCORD_MOD_ROLE_IDS?: string;
   SESSION_SECRET?: string;
   DISCORD_BOT_TOKEN?: string;
   FEED_MAP?: string;
@@ -144,6 +145,7 @@ app.get('/api/auth/callback', async (c) => {
     DISCORD_CLIENT_SECRET: secret,
     DISCORD_GUILD_ID: guild = '633351482128728064',
     DISCORD_MOD_ROLE_ID: role,
+    DISCORD_MOD_ROLE_IDS: rolesCsv,
     SESSION_SECRET: sess,
   } = c.env;
   if (!id || !secret || !sess) return new Response('Login not configured', { status: 503 });
@@ -160,7 +162,11 @@ app.get('/api/auth/callback', async (c) => {
   if (!user) return new Response('Could not read Discord profile.', { status: 400 });
   const roles = await discordMemberRoles(token, guild);
   if (!roles) return Response.redirect(`${oauthRedirectUri(c.env).replace('/api/auth/callback', '')}/mail/?denied=notmember`, 302);
-  if (role && !roles.includes(role)) {
+  const allowedRoles = (rolesCsv ?? role ?? '')
+    .split(',')
+    .map((r) => r.trim())
+    .filter(Boolean);
+  if (allowedRoles.length && !allowedRoles.some((r) => roles.includes(r))) {
     return Response.redirect(`${oauthRedirectUri(c.env).replace('/api/auth/callback', '')}/mail/?denied=role`, 302);
   }
   const session = await signSession({ uid: user.id, uname: user.global_name || user.username || '', roles }, sess);
