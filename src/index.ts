@@ -101,7 +101,7 @@ app.use('/hooks/*', guardApi);
 //  3. Shared key X-Mod-Key vs MOD_API_KEY (workers.dev origin, scripts, dev).
 app.use('/api/*', async (c, next) => {
   const path = new URL(c.req.url).pathname;
-  if (path === '/api/health' || path.startsWith('/api/auth/')) return next();
+  if (path === '/api/health' || path === '/api/roadmap' || path.startsWith('/api/auth/')) return next();
   if (c.env.SESSION_SECRET) {
     const cookie = readCookie(c.req.header('cookie'), 'pck_session');
     if (await verifySession(cookie, c.env.SESSION_SECRET)) return next();
@@ -329,6 +329,9 @@ type InboxRow = {
   url: string;
   assigned: string | null;
   archived: number;
+  roadmap: number;
+  roadmap_status: string;
+  roadmap_date: string;
   created_at: string;
 };
 
@@ -365,6 +368,9 @@ async function insertInboxItem(db: D1Database, input: InboxInput, fallbackServer
     url: (input.url ?? '#').slice(0, 500),
     assigned: null,
     archived: 0,
+    roadmap: 0,
+    roadmap_status: '',
+    roadmap_date: '',
     created_at: new Date().toISOString(),
   };
   if (!row.server.trim()) throw new Error('server is required');
@@ -410,6 +416,59 @@ app.get('/api/health', (c) => {
     communityDomain: c.env.COMMUNITY_DOMAIN ?? 'mail.example.com',
     time: new Date().toISOString(),
   });
+});
+
+// Public roadmap: promoted ideas with status + target date (read-only).
+app.get('/api/roadmap', async (c) => {
+  try {
+    const res = await c.env.DB.prepare(
+      `SELECT id, server, type, tag, author, title, content, url, roadmap_status, roadmap_date, created_at
+       FROM inbox_items WHERE roadmap = 1
+       ORDER BY (roadmap_date = '') ASC, roadmap_date ASC, created_at DESC`,
+    ).all<Record<string, unknown>>();
+    return c.json({ ok: true, items: res.results ?? [] });
+  } catch (err) {
+    jsonLog('error', 'roadmap list failed', { error: String(err) });
+    return bad('Failed to load roadmap', 500);
+  }
+});
+
+// Promote/update a roadmap entry (status, target date, or remove).
+app.post('/api/inbox/:id/roadmap', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await readJson<{ roadmap?: boolean; status?: string; date?: string }>(c);
+    const sets: string[] = [];
+    const binds: unknown[] = [];
+    if (typeof body.roadmap === 'boolean') {
+      sets.push('roadmap = ?');
+      binds.push(body.roadmap ? 1 : 0);
+      if (body.roadmap) sets.push("roadmap_status = CASE WHEN roadmap_status = '' THEN 'planned' ELSE roadmap_status END");
+    }
+    if (typeof body.status === 'string') {
+      if (!sets.includes('roadmap = 1')) sets.push('roadmap = 1');
+      sets.push('roadmap_status = ?');
+      binds.push(body.status.slice(0, 32));
+    }
+    if (typeof body.date === 'string') {
+      if (!sets.includes('roadmap = 1')) sets.push('roadmap = 1');
+      sets.push('roadmap_date = ?');
+      binds.push(body.date.slice(0, 32));
+    }
+    if (sets.length === 0) return bad('nothing to update', 400);
+    const r = await c.env.DB.prepare(`UPDATE inbox_items SET ${sets.join(', ')} WHERE id = ?`)
+      .bind(...binds, id)
+      .run();
+    if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
+      return bad('item not found', 404);
+    }
+    return c.json({ ok: true });
+  } catch (err) {
+    const passthrough = passthroughResponse(err);
+    if (passthrough) return passthrough;
+    jsonLog('error', 'roadmap update failed', { error: String(err) });
+    return bad('Failed to update roadmap', 500);
+  }
 });
 
 // List inbox items (non-archived by default). Filters: server, type, q, includeArchived=1
@@ -498,6 +557,9 @@ app.post('/api/inbox', async (c) => {
       url: (body.url ?? '#').slice(0, 500),
       assigned: null,
       archived: 0,
+      roadmap: 0,
+      roadmap_status: '',
+      roadmap_date: '',
       created_at: new Date().toISOString(),
     };
     await c.env.DB.prepare(
@@ -836,6 +898,9 @@ app.post('/hooks/discourse', async (c) => {
       url: '#',
       assigned: null,
       archived: 0,
+      roadmap: 0,
+      roadmap_status: '',
+      roadmap_date: '',
       created_at: new Date().toISOString(),
     };
     await c.env.DB.prepare(
@@ -880,6 +945,9 @@ app.post('/hooks/discord', async (c) => {
       url: (body.url ?? '#').slice(0, 500),
       assigned: null,
       archived: 0,
+      roadmap: 0,
+      roadmap_status: '',
+      roadmap_date: '',
       created_at: new Date().toISOString(),
     };
     if (!(await checkIngestAuth(c.env.DB, c.env, c.req.raw.headers, row.server))) {

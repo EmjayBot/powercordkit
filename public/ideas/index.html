@@ -34,7 +34,7 @@
 </style>
 </head>
 <body>
-<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Idea Capture</span><a href="/mail/" style="font-size:12px;color:var(--m)">Overview</a><a href="/mail/inbox/" style="margin-left:auto;font-size:12px;color:var(--m)">Full inbox →</a></div>
+<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Idea Capture</span><a href="/roadmap/" style="font-size:12px;color:var(--m)">Roadmap</a><a href="/mail/" style="font-size:12px;color:var(--m)">Overview</a><a href="/mail/inbox/" style="margin-left:auto;font-size:12px;color:var(--m)">Full inbox →</a></div>
 <div class="wrap">
   <div class="bar"><input class="inp search" id="q" placeholder="Search ideas…" /><button class="btn" id="new">+ New idea</button></div>
   <div class="form" id="form">
@@ -55,9 +55,10 @@ async function api(path, opts) {
   const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
   let r = await fetch(path, Object.assign({}, opts, { headers }));
   if (r.status === 401) {
-    let needKey = false;
-    try { needKey = (await r.clone().json()).error === 'Mod key required'; } catch (e) {}
-    if (needKey) {
+    let info = {};
+    try { info = await r.clone().json(); } catch (e) {}
+    if (info.login) { window.location.href = '/api/auth/login'; return r; }
+    if (info.error === 'Mod key required') {
       const k = prompt('This inbox needs a mod key:');
       if (k) {
         sessionStorage.setItem('pck-mod-key', k);
@@ -88,7 +89,7 @@ function render(){
     '<div class="actions"><button class="btn ghost" data-road="' + d.id + '">Promote to roadmap</button><button class="btn ghost" data-drop="' + d.id + '">Drop</button></div></div>').join('')
     || '<div style="color:var(--m);font-size:13px">No ideas yet — capture the first one above.</div>';
   document.querySelectorAll('[data-road]').forEach(b => b.onclick = async () => {
-    await api('/api/inbox/' + b.dataset.road + '/assign', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ assigned:'@roadmap' }) });
+    await api('/api/inbox/' + b.dataset.road + '/roadmap', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roadmap:true }) });
     load();
   });
   document.querySelectorAll('[data-drop]').forEach(b => b.onclick = async () => {

@@ -213,12 +213,38 @@ function select(id) {
       '<div class="box">' + md(sel.content) + '</div>' +
       '<div id="notes">' + (sel.notes || []).map((n) => '<div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #26262b"><div class="av" style="width:22px;height:22px">' + esc((n.by || '?')[0]) + '</div><div><b style="font-size:12px">' + esc(n.by) + '</b><div style="font-size:13px">' + esc(n.text) + '</div></div></div>').join('') + '</div>' +
       '<div style="display:flex;gap:8px;margin-top:10px"><input class="search" id="note-inp" placeholder="Add private note…" /><button class="abtn prim" id="note-btn">Add</button></div>' +
+      '<div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px">' +
+        '<span style="color:var(--m)">Roadmap</span>' +
+        '<select id="rm-status" class="abtn" style="padding:4px 8px">' +
+          [['planned','Planned'],['in-progress','In Progress'],['shipped','Shipped']].map(function (o) { return '<option value="' + o[0] + '"' + (((sel.roadmap_status || 'planned') === o[0]) ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+        '</select>' +
+        '<input id="rm-date" type="date" class="abtn" value="' + esc(sel.roadmap_date || '') + '" style="padding:3px 6px" />' +
+        '<button class="abtn prim" id="rm-save">' + (sel.roadmap ? 'Update' : 'Add to roadmap') + '</button>' +
+        (sel.roadmap ? '<button class="abtn" id="rm-remove">Remove</button>' : '') +
+      '</div>' +
       '<div class="origin">Posted by <b style="color:var(--t)">' + esc(sel.author || 'unknown') + '</b> • From ' + esc(sel.server) + ' (' + esc(sel.src) + ') • Mailed by ' + esc(sel.by) + ' • <a href="#" id="assign-link" style="color:#5865F2">assign to me</a>' + (sel.url && sel.url !== '#' ? ' • <a href="' + esc(sel.url) + '" target="_blank" rel="noopener" style="color:#5865F2">Open in Discord ↗</a>' : '') + '</div>' +
     '</div>';
   $('arch-btn').onclick = () => (sel.archived ? reopen(sel.id) : complete(sel.id));
   $('jump-btn').onclick = () => { if (sel.url && sel.url !== '#') window.open(sel.url, '_blank', 'noopener'); };
   $('assign-link').onclick = (e) => { e.preventDefault(); assign(sel.id, '@me'); };
   $('note-btn').onclick = () => addNote(sel.id);
+  $('rm-save').onclick = () => roadmapSave(sel.id);
+  const rmv = $('rm-remove');
+  if (rmv) rmv.onclick = () => roadmapRemove(sel.id);
+}
+
+async function roadmapSave(id) {
+  const status = $('rm-status').value;
+  const date = $('rm-date').value;
+  try { await api('/api/inbox/' + encodeURIComponent(id) + '/roadmap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, date }) }); } catch {}
+  await load();
+  select(id);
+}
+
+async function roadmapRemove(id) {
+  try { await api('/api/inbox/' + encodeURIComponent(id) + '/roadmap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roadmap: false }) }); } catch {}
+  await load();
+  select(id);
 }
 
 async function complete(id) {
