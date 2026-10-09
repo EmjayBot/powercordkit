@@ -37,8 +37,8 @@
 </div>
 <div class="main">
   <div class="side">
-    <div><h4>Servers</h4><div id="srv-filters"><div class="srv active" data-server="all"><span>All Servers</span><span id="c-all">–</span></div><div class="srv" data-server="general"><span>General</span></div><div class="srv" data-server="support"><span>Support</span></div><div class="srv" data-server="staff"><span>Staff</span></div><div class="srv" data-server="discourse"><span>Discourse Forum</span></div></div></div>
-    <div><h4>Type</h4><div class="srv active" data-type="all"><span>All types</span></div><div class="srv" data-type="idea"><span>Ideas</span></div><div class="srv" data-type="support"><span>Support</span></div><div class="srv" data-type="ticket"><span>Tickets</span></div><div class="srv" data-type="mailed"><span>Mailed</span></div></div>
+    <div><h4>Servers</h4><div id="srv-filters"><div class="srv active" data-server="all"><span>All Servers</span><span id="c-all">–</span></div></div></div>
+    <div><h4>Type</h4><div id="type-filters"><div class="srv active" data-type="all"><span>All types</span></div></div></div>
     <div style="margin-top:auto"><div style="font-size:10px;color:var(--m);line-height:1.6" id="hook-hint">Discourse webhook:<br/>POST /hooks/discourse</div></div>
   </div>
   <div class="list">
@@ -81,23 +81,33 @@ async function api(path, opts) {
   return r;
 }
 
-// Server filters come from the live registry (GET /api/servers) so the inbox
-// scales to any number of servers with zero configuration. Static HTML above
-// is the offline fallback.
-function renderServerFilters(list) {
-  serversCache = list || [];
+// Filters come from the live registry (GET /api/servers) so the sidebar only
+// ever shows servers/types that actually have data — no phantom filters that
+// empty the list when clicked. Static HTML above is just the pre-load skeleton.
+function renderFilters(servers, types) {
+  serversCache = servers || [];
   const box = $('srv-filters');
-  if (!box || !serversCache.length) return;
-  if (fS !== 'all' && !serversCache.some((s) => s.server === fS)) fS = 'all';
-  const total = serversCache.reduce((a, s) => a + s.count, 0);
-  box.innerHTML = '<div class="srv' + (fS === 'all' ? ' active' : '') + '" data-server="all"><span>All Servers</span><span>' + total + '</span></div>' +
-    serversCache.map((s) => '<div class="srv' + (fS === s.server ? ' active' : '') + '" data-server="' + esc(s.server) + '"><span>' + esc(s.server) + (s.locked ? ' 🔒' : '') + '</span><span>' + s.count + '</span></div>').join('');
-  const selEl = $('m-server');
-  if (selEl) {
-    const cur = selEl.value;
-    const names = serversCache.map((s) => s.server);
-    selEl.innerHTML = names.map((n) => '<option' + (n === cur ? ' selected' : '') + '>' + esc(n) + '</option>').join('');
-    if (!names.includes(cur) && cur) selEl.innerHTML += '<option selected>' + esc(cur) + '</option>';
+  if (box && serversCache.length) {
+    const shown = serversCache.filter((s) => s.count > 0);
+    if (fS !== 'all' && !shown.some((s) => s.server === fS)) fS = 'all';
+    const total = serversCache.reduce((a, s) => a + s.count, 0);
+    box.innerHTML = '<div class="srv' + (fS === 'all' ? ' active' : '') + '" data-server="all"><span>All Servers</span><span>' + total + '</span></div>' +
+      shown.map((s) => '<div class="srv' + (fS === s.server ? ' active' : '') + '" data-server="' + esc(s.server) + '"><span>' + esc(s.server) + (s.locked ? ' 🔒' : '') + '</span><span>' + s.count + '</span></div>').join('');
+    const selEl = $('m-server');
+    if (selEl) {
+      const cur = selEl.value;
+      const names = serversCache.map((s) => s.server);
+      selEl.innerHTML = names.map((n) => '<option' + (n === cur ? ' selected' : '') + '>' + esc(n) + '</option>').join('');
+      if (!names.includes(cur) && cur) selEl.innerHTML += '<option selected>' + esc(cur) + '</option>';
+    }
+  }
+  const tbox = $('type-filters');
+  if (tbox) {
+    const list = (types || []).filter((t) => t.count > 0);
+    if (fT !== 'all' && !list.some((t) => t.type === fT)) fT = 'all';
+    const total = list.reduce((a, t) => a + t.count, 0);
+    tbox.innerHTML = '<div class="srv' + (fT === 'all' ? ' active' : '') + '" data-type="all"><span>All types</span><span>' + total + '</span></div>' +
+      list.map((t) => '<div class="srv' + (fT === t.type ? ' active' : '') + '" data-type="' + esc(t.type) + '"><span>' + esc(t.type) + '</span><span>' + t.count + '</span></div>').join('');
   }
 }
 
@@ -114,7 +124,7 @@ async function load() {
     const j = await r.json();
     data = j.items || [];
     $('status').textContent = data.length + ' items • Workers + D1 • E to archive';
-    api('/api/servers').then((r) => r.json()).then((sj) => renderServerFilters(sj.servers || [])).catch(() => {});
+    api('/api/servers').then((r) => r.json()).then((sj) => renderFilters(sj.servers || [], sj.types || [])).catch(() => {});
     const h = await fetch('/api/health', { cache: 'no-store' }).then(x=>x.json()).catch(()=>null);
     if (h) { $('env-pill').textContent = 'Inbox • ' + (h.env || 'personal'); $('api-env').textContent = (h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi') + ' (Workers + D1)'; $('hook-hint').innerHTML = 'Discourse webhook:<br/>POST ' + (h.env === 'community' ? 'https://mod.tep.one/hooks/discourse' : 'https://powercordkit.emjay.fyi/hooks/discourse'); }
   } catch (e) {
@@ -133,6 +143,12 @@ async function load() {
 function render() {
   const c = $('items'); c.innerHTML = '';
   $('c-all').textContent = data.length;
+  if (data.length === 0) {
+    c.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--m)"><div style="font-size:26px;margin-bottom:8px">🔍</div><div style="font-size:13px">No items match this filter.</div><button class="abtn" id="clear-filters" style="margin-top:10px">Show all</button></div>';
+    const cb = $('clear-filters');
+    if (cb) cb.onclick = () => { fS = 'all'; fT = 'all'; $('q').value = ''; load(); };
+    return;
+  }
   data.forEach((d) => {
     const el = document.createElement('div');
     el.className = 'item' + (sel && sel.id === d.id ? ' sel' : '');

@@ -613,6 +613,9 @@ app.get('/api/servers', async (c) => {
       server: string;
     }>();
     const locked = new Set((toks.results ?? []).map((t) => t.server));
+    const typeRes = await c.env.DB.prepare(
+      `SELECT type, SUM(CASE WHEN archived = 0 THEN 1 ELSE 0 END) AS n FROM inbox_items GROUP BY type ORDER BY type`,
+    ).all<{ type: string; n: number }>();
     return c.json({
       ok: true,
       servers: [...map.values()].map((s) => ({
@@ -621,6 +624,7 @@ app.get('/api/servers', async (c) => {
         types: [...s.types],
         locked: locked.has(s.server),
       })),
+      types: (typeRes.results ?? []).map((t) => ({ type: t.type, count: t.n })),
     });
   } catch (err) {
     jsonLog('error', 'servers list failed', { error: String(err) });
