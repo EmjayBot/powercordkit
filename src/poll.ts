@@ -158,9 +158,26 @@ export async function setThreadState(
     }
   }
 
+  const alreadyArchived = th.thread_metadata?.archived === true;
   if (typeof opts.archive === 'boolean') {
-    body.archived = opts.archive;
-    body.locked = opts.archive;
+    if (opts.archive === true && alreadyArchived) {
+      // Already closed. Only touch it if a tag still needs applying.
+      if (!body.applied_tags) return { ok: true, tag, closed: true, skipped: 'already-archived' };
+      const un = await fetchFn(base + `/channels/${threadId}`, {
+        method: 'PATCH',
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify({ archived: false }),
+      });
+      if (!un.ok) return { ok: false, tag, reason: 'unarchive-' + un.status };
+      body.archived = true;
+      body.locked = true;
+    } else if (opts.archive === false && !alreadyArchived) {
+      // Already open; only proceed if there's a tag change to make.
+      if (Object.keys(body).length === 0) return { ok: true, tag, closed: false, skipped: 'already-open' };
+    } else {
+      body.archived = opts.archive;
+      body.locked = opts.archive;
+    }
   }
 
   if (Object.keys(body).length === 0) return { ok: true, tag, skipped: 'no-op' };

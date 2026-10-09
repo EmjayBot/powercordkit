@@ -622,6 +622,44 @@ app.post('/api/inbox/:id/reopen', async (c) => {
   }
 });
 
+// Retroactively sync already-completed items onto Discord (tag + close).
+// Bounded batch (limit/offset) so it can run within subrequest limits.
+app.post('/api/admin/resync-completed', async (c) => {
+  try {
+    if (!c.env.DISCORD_BOT_TOKEN) return bad('no bot token', 400);
+    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? '8') || 8, 1), 20);
+    const offset = Math.max(Number(c.req.query('offset') ?? '0') || 0, 0);
+    const rows = await c.env.DB.prepare(
+      `SELECT id, url FROM inbox_items
+       WHERE archived = 1 AND tag = 'Completed' AND src = 'discord'
+       ORDER BY id LIMIT ? OFFSET ?`,
+    ).bind(limit, offset).all<{ id: string; url: string }>();
+    let synced = 0;
+    let failed = 0;
+    const samples: unknown[] = [];
+    for (const row of rows.results ?? []) {
+      const tid = (row.url || '').split('/').pop() || '';
+      if (!/^\d+$/.test(tid)) continue;
+      const r = await setThreadState(
+        c.env.DISCORD_BOT_TOKEN,
+        tid,
+        { tagName: c.env.DISCORD_COMPLETE_TAG || 'Completed', archive: true },
+        fetch,
+        (level, msg, extra) => jsonLog(level, msg, extra),
+      );
+      if (r.ok) synced++;
+      else {
+        failed++;
+        if (samples.length < 5) samples.push({ url: row.url, r });
+      }
+    }
+    return c.json({ ok: true, processed: (rows.results ?? []).length, synced, failed, offset, samples });
+  } catch (err) {
+    jsonLog('error', 'resync completed failed', { error: String(err) });
+    return bad('Resync failed', 500);
+  }
+});
+
 // Enrich already-ingested poller thread items with real content/author/tags.
 // Bounded batch; call repeatedly until remaining = 0.
 app.post('/api/admin/backfill-threads', async (c) => {
