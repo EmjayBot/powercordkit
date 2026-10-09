@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { pollDiscord } from './poll';
+import { verifyAccessJwt } from './access';
 
 type Bindings = {
   DB: D1Database;
@@ -14,6 +15,8 @@ type Bindings = {
   MAX_PAYLOAD_BYTES?: string;
   DEFAULT_SERVER?: string;
   MOD_API_KEY?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
   DISCORD_BOT_TOKEN?: string;
   FEED_MAP?: string;
   POLL_DEBUG?: string;
@@ -70,18 +73,29 @@ async function guardApi(
 app.use('/api/*', guardApi);
 app.use('/hooks/*', guardApi);
 
-// Optional mod-team gate for the API (not webhooks): when MOD_API_KEY is set
-// (wrangler secret put MOD_API_KEY), every /api/* route except /api/health
-// requires X-Mod-Key. Unset = open (local dev). Browser UIs prompt once per
-// session and keep the key in sessionStorage (never localStorage, never URL).
+// Mod-team gate for the API (not webhooks). Two ways in:
+//  1. Cloudflare Access: a valid signed Access JWT (mods log in via their IdP;
+//     no shared key). Active when ACCESS_TEAM_DOMAIN + ACCESS_AUD are set.
+//  2. Shared key: X-Mod-Key vs MOD_API_KEY (fallback for the workers.dev origin,
+//     scripts, and local dev). Both accepted; either grants access.
 app.use('/api/*', async (c, next) => {
   if (new URL(c.req.url).pathname === '/api/health') return next();
+  const team = c.env.ACCESS_TEAM_DOMAIN;
+  const aud = c.env.ACCESS_AUD;
+  if (team && aud) {
+    const jwt = c.req.header('Cf-Access-Jwt-Assertion') ?? null;
+    if (await verifyAccessJwt(jwt, team, aud)) return next();
+  }
   const key = c.env.MOD_API_KEY;
   if (key) {
     const given = c.req.header('X-Mod-Key') ?? '';
-    if (!(await timingSafeEqualString(given, key))) {
+    if (await timingSafeEqualString(given, key)) return next();
+    if (!(team && aud)) {
       return Response.json({ ok: false, error: 'Mod key required' }, { status: 401, headers: SEC_HEADERS });
     }
+  }
+  if (team && aud) {
+    return Response.json({ ok: false, error: 'Access login required' }, { status: 401, headers: SEC_HEADERS });
   }
   await next();
 });
