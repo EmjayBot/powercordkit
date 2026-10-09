@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Mail Setup Guide — PowerCordKit</title>
-<meta name="description" content="Self-host the PowerCordKit mod inbox: Cloudflare Workers + D1, custom domains, Discourse and Discord wiring." />
+<title>Mail Setup Guide</title>
+<meta name="description" content="Self-host the mod inbox: Cloudflare Workers + D1, custom domains, Discourse and Discord wiring." />
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
@@ -35,7 +35,7 @@ td{padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
 </style>
 </head>
 <body>
-<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" /> PowerCordKit</a><span style="color:var(--m)">/ Mail setup</span></div>
+<div id="pck-nav"></div>
 <div class="wrap">
   <h1>Self-host the Mail inbox</h1>
   <p class="lead">The labs run anywhere static. The <b>Mail inbox</b> (unified triage, tickets, ideas, webhooks) needs one Cloudflare Worker + one D1 database per community. This guide takes you from zero to a live inbox in ~20 minutes. Free-tier friendly.</p>
@@ -206,7 +206,7 @@ client.login(process.env.DISCORD_BOT_TOKEN);</pre>
 npm run deploy:tools      # Cloudflare Pages, then attach your domain
 # …or push to main: the GitHub Pages workflow publishes the labs</pre></li></ul>
   <div class="note">One condition (<code>LICENSE.md</code>, MIT + credit): keep the <b>“Powered by PowerCordKit”</b> footer credit and link back on any copy, embed, or self-hosted toolset. Removing the credit while keeping the code isn't permitted.</div>
-  <p><a href="/">← Back to PowerCordKit</a> · <a href="/mail/">Mail overview</a></p>
+  <p><a href="/">← Back to tools</a> · <a href="/mail/">Mail overview</a></p>
 </div>
 <script>
 document.querySelectorAll('pre').forEach(pre => {
@@ -214,5 +214,7 @@ document.querySelectorAll('pre').forEach(pre => {
   if(b) b.onclick = () => { navigator.clipboard.writeText(pre.textContent.replace('Copy','').trim()); b.textContent = '✓'; setTimeout(() => b.textContent = 'Copy', 1200); };
 });
 </script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
 </body>
 </html>

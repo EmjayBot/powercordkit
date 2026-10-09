@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Snowflake Lab — PowerCordKit</title>
+<title>Snowflake Lab</title>
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
@@ -28,7 +28,7 @@
 </style>
 </head>
 <body>
-<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Snowflake Lab</span></div>
+<div id="pck-nav"></div>
 <div class="wrap">
   <div class="card"><h3>Decode a Discord ID</h3>
     <div class="row"><input class="inp" id="sf" placeholder="e.g. 112233445566778899" inputmode="numeric" /><button class="btn" id="go">Decode</button></div>
@@ -67,5 +67,7 @@ function age(ms){ const s=Math.floor(ms/1000); if(s<60) return s+'s old'; const 
 $('go').onclick = decode;
 $('sf').addEventListener('keydown', e => { if(e.key === 'Enter') decode(); });
 </script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
 </body>
 </html>

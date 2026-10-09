@@ -10,12 +10,12 @@ const out = process.argv.includes('--out')
   ? process.argv[process.argv.indexOf('--out') + 1]
   : join(ROOT, 'dist', 'tools');
 
-// Instance identity: copy tools.config.json to tools.<yours>.json, tweak it,
-// and pass --config. Showcase (powercordkit.emjay.fyi) keeps its own look;
-// every self-hosted toolset gets its own name, tagline and accent.
+// Instance identity: one shared site.config.json for Tools + Mail — tweak it,
+// or copy to tools.<yours>.json and pass --config. The showcase keeps its own
+// look; every self-hosted toolset gets its own name, tagline and accent.
 const identityFile = process.argv.includes('--config')
   ? process.argv[process.argv.indexOf('--config') + 1]
-  : join(ROOT, 'tools.config.json');
+  : join(ROOT, 'public', 'site.config.json');
 const identity = JSON.parse(readFileSync(identityFile, 'utf8'));
 for (const k of ['siteName', 'tagline', 'accent', 'footerNote', 'baseUrl']) {
   if (!identity[k] || typeof identity[k] !== 'string') {
@@ -43,6 +43,9 @@ for (const l of links) {
     process.exit(1);
   }
 }
+// Tools-only site: drop nav links to routes that don't exist here.
+const PRUNED = ['/mail/', '/tickets/', '/ideas/'];
+const toolLinks = links.filter((l) => !PRUNED.some((p) => l.href === p || l.href.startsWith(p)));
 let base = identity.baseUrl;
 if (!base.startsWith('/')) {
   console.error('tools identity baseUrl must start with / (use "/" for domain root)');
@@ -97,7 +100,7 @@ const hub = `<!DOCTYPE html>
 <body>
 <div class="nav">
   <a class="logo" href="/"><img src="${escAttr(logo)}" alt="" /> ${escAttr(brand)}</a>
-  <div class="links">${links.map((l) => `<a href="${escAttr(l.href)}">${escAttr(l.label)}</a>`).join('')}</div>
+  <div class="links">${toolLinks.map((l) => `<a href="${escAttr(l.href)}">${escAttr(l.label)}</a>`).join('')}</div>
 </div>
 <div class="wrap" style="padding-top:24px;max-width:1080px">
   <div class="grid" id="tools">${labs}
@@ -115,6 +118,28 @@ writeFileSync(hubPath, hub);
 // baseUrl: repoint every root-absolute link/asset in the tools site so forks
 // can live at domain root ("/") or any subpath ("/my-tools/").
 const bp = base === '/' ? '' : base.slice(0, -1);
+
+// Tools-specific shell config for the copied pages (site.js reads it), so the
+// header/links/accent stay customizable here without rebuild of the source.
+const rebased = (href) => (!href || href.startsWith('#') || /^https?:/.test(href) ? href : bp + href);
+writeFileSync(
+  join(out, 'site.config.json'),
+  JSON.stringify(
+    {
+      siteName: identity.siteName,
+      accent: identity.accent,
+      header: {
+        brand,
+        logo,
+        home: base,
+        links: toolLinks.map((l) => ({ label: l.label, href: rebased(l.href) })),
+      },
+      footerNote: identity.footerNote,
+    },
+    null,
+    2,
+  ),
+);
 const rewriteFile = (p) => {
   let t = readFileSync(p, 'utf8');
   t = t.replace(/(href|src)="\/(?!\/)/g, `$1="${bp}/`);

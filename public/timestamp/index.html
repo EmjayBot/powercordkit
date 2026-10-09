@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Timestamp Lab — PowerCordKit</title>
+<title>Timestamp Lab</title>
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
@@ -29,7 +29,7 @@
 </style>
 </head>
 <body>
-<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Timestamp Lab</span></div>
+<div id="pck-nav"></div>
 <div class="wrap">
   <div class="card"><h3>Pick a moment</h3>
     <div class="row"><input class="inp" type="datetime-local" id="dt" /><button class="btn ghost" id="now">Use now</button></div>
@@ -61,5 +61,7 @@ $('now').onclick = setNow;
 document.querySelectorAll('.pill').forEach(p => p.onclick = () => { const d = new Date(Date.now() + (+p.dataset.min)*60000); d.setSeconds(0,0); $('dt').value = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16); render(); });
 setNow();
 </script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
 </body>
 </html>

@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PowerCordKit — Discord Mod Tools</title>
-<meta name="description" content="PowerCordKit: unified mod inbox plus Discord labs — embeds, color, timestamps, snowflakes, markdown, webhooks, slowmode." />
+<title>Community Toolset</title>
+<meta name="description" content="Discord mod tools plus a unified mail inbox." />
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
@@ -19,39 +19,15 @@
 .nav .sp{margin-left:auto;display:flex;gap:8px;align-items:center}
 .pill{font-size:11px;font-weight:700;background:var(--p2);border:1px solid var(--bd);border-radius:999px;padding:5px 11px;color:var(--m)}
 .pill.live{color:var(--green);border-color:rgba(59,165,93,.5)}
-.hero{max-width:1080px;margin:0 auto;padding:72px 20px 40px;text-align:center}
-.hero .kicker{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--b);background:rgba(88,101,242,.12);border:1px solid rgba(88,101,242,.4);border-radius:999px;padding:6px 14px;margin-bottom:18px}
-.hero h1{margin:0;font-size:clamp(32px,5vw,52px);letter-spacing:-.03em;line-height:1.05}
-.hero h1 span{color:var(--b)}
-.hero p{color:var(--m);font-size:16px;max-width:620px;margin:16px auto 0;line-height:1.6}
-.cta{display:flex;gap:10px;justify-content:center;margin-top:28px;flex-wrap:wrap}
-.btn{background:var(--b);color:#fff;border:0;border-radius:10px;padding:13px 22px;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}
-.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
-.livebar{display:flex;gap:8px;justify-content:center;margin-top:22px;flex-wrap:wrap}
 .wrap{max-width:1080px;margin:0 auto;padding:20px 20px 80px}
-.sec{margin-top:44px}
+.sec{margin-top:32px}
 .sec h2{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--m);margin:0 0 4px 0}
 .sec .sub{color:var(--m);font-size:13px;margin:0 0 16px 0}
-.mailgrid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:12px}
-@media(max-width:860px){.mailgrid{grid-template-columns:1fr 1fr}}
-@media(max-width:560px){.mailgrid{grid-template-columns:1fr}}
-.mcard{background:linear-gradient(180deg,var(--p2),var(--p));border:1px solid var(--bd);border-radius:14px;padding:18px;text-decoration:none;color:var(--t);display:block}
-.mcard.hero-card{border-color:rgba(88,101,242,.55);background:linear-gradient(180deg,rgba(88,101,242,.16),var(--p))}
-.mcard:hover{border-color:var(--b)}
-.mcard .n{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
-.mcard h3{margin:0 0 6px 0;font-size:15px}
-.mcard p{margin:0;color:var(--m);font-size:12.5px;line-height:1.5}
-.mcard .l{font-size:12px;color:var(--m);margin-top:2px}
-.mcard .go{margin-top:12px;display:inline-block;background:var(--b);color:#fff;font-size:12px;font-weight:700;border-radius:8px;padding:8px 12px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
 .card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px;text-decoration:none;color:var(--t);display:block}
 .card:hover{border-color:var(--b)}
 .card h3{margin:0 0 6px 0;font-size:14px}
 .card p{margin:0;color:var(--m);font-size:12.5px;line-height:1.5}
-.apibox{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px}
-.apibox .row{display:flex;gap:8px;align-items:center;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px}
-.apibox code{font-size:11.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.copy{background:var(--p);border:1px solid var(--bd);color:var(--t);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer}
 .foot{border-top:1px solid var(--bd);margin-top:56px;padding:24px 20px;color:var(--m);font-size:12px}
 .foot .in{max-width:1080px;margin:0 auto;display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
 .foot a{color:var(--m);text-decoration:none}.foot a:hover{color:var(--t)}
@@ -59,39 +35,12 @@ code{background:var(--p2);border:1px solid var(--bd);border-radius:6px;padding:2
 </style>
 </head>
 <body>
-<div class="nav">
-  <a class="logo" href="/"><img src="/assets/powercordkit_logo.png" alt="" /> PowerCordKit</a>
-  <div class="links"><a href="/mail/">Mail</a><a href="#labs">Labs</a><a href="#api">API</a></div>
-  <div class="sp"><span class="pill" id="env">…</span><span class="pill" id="api-pill">…</span></div>
-</div>
-
-<div class="hero">
-  <div class="kicker">Discord mod toolsuite</div>
-  <h1>Every server, every forum.<br /><span>One inbox.</span></h1>
-  <p>PowerCordKit triages ideas, support threads and tickets from all your Discord servers plus Discourse into a single mod inbox — with a lab for every Discord power task around it.</p>
-  <div class="cta"><a class="btn" href="/mail/">Open Mail overview →</a><a class="btn ghost" href="#labs">Browse labs</a></div>
-  <!-- TOOLS:REMOVE-START -->
-  <div class="livebar"><span class="pill" id="c-open">– open</span><span class="pill" id="c-tickets">– tickets</span><span class="pill" id="c-ideas">– ideas</span></div>
-  <!-- TOOLS:REMOVE-END -->
-</div>
+<div id="pck-nav"></div>
 
 <div class="wrap">
-  <!-- TOOLS:REMOVE-START -->
-  <div class="sec">
-    <h2>✉️ Mail suite — one tap to everything</h2>
-    <p class="sub">Live from the inbox API. Start at the overview, dive into a queue.</p>
-    <div class="mailgrid">
-      <a class="mcard hero-card" href="/mail/"><h3>📬 Mail overview</h3><p>Queue stats, latest tickets, ideas and arrivals — then one tap into any workflow.</p><span class="go">Open overview →</span></a>
-      <a class="mcard" href="/mail/inbox/"><div class="n" id="n-open">–</div><div class="l">Open in inbox</div><span class="go">Triage →</span></a>
-      <a class="mcard" href="/tickets/"><div class="n" id="n-tickets">–</div><div class="l">Tickets in triage</div><span class="go">Triage →</span></a>
-      <a class="mcard" href="/ideas/"><div class="n" id="n-ideas">–</div><div class="l">Ideas queued</div><span class="go">Review →</span></a>
-    </div>
-  </div>
-  <!-- TOOLS:REMOVE-END -->
-
   <div class="sec" id="labs">
-    <h2>🧪 Labs</h2>
-    <p class="sub">Static tools — instant, private, work offline and on GitHub Pages.</p>
+    <h2>Tools</h2>
+    <p class="sub">Static tools — instant, private, work offline.</p>
     <!-- TOOLS:LABS-START -->
     <div class="grid">
       <a class="card" href="/embeds/"><h3>🧩 Embed Lab</h3><p>Builder with live preview, limit validation, JSON export, send-to-Mail.</p></a>
@@ -105,72 +54,20 @@ code{background:var(--p2);border:1px solid var(--bd);border-radius:6px;padding:2
     <!-- TOOLS:LABS-END -->
   </div>
 
-  <!-- TOOLS:REMOVE-START -->
-  <div class="sec" id="api">
-    <h2>🔌 For mods &amp; bot devs</h2>
-    <p class="sub">Wire Discord and Discourse into the inbox. Host: <span id="host">…</span></p>
-    <div class="apibox">
-      <div class="row"><code id="u1">GET /api/inbox?server=&amp;type=&amp;q=</code><button class="copy" data-c="u1">Copy</button></div>
-      <div class="row"><code id="u2">POST /hooks/discourse</code><button class="copy" data-c="u2">Copy</button></div>
-      <div class="row"><code id="u3">POST /hooks/discord</code><button class="copy" data-c="u3">Copy</button></div>
-      <div class="row"><code id="u4">POST /hooks/:name — nodebb, flarum, lemmy, custom</code><button class="copy" data-c="u4">Copy</button></div>
+  <div class="sec">
+    <h2>Mail</h2>
+    <p class="sub">Unified mod inbox — every server and forum in one queue.</p>
+    <div class="grid">
+      <a class="card" href="/mail/"><h3>📬 Mail overview</h3><p>Queue stats, latest tickets, ideas and arrivals.</p></a>
+      <a class="card" href="/mail/inbox/"><h3>🗂️ Inbox</h3><p>Triage everything: complete, assign, note, jump to source.</p></a>
+      <a class="card" href="/ideas/"><h3>💡 Ideas</h3><p>Promote community suggestions to the roadmap.</p></a>
+      <a class="card" href="/roadmap/"><h3>🗺️ Roadmap</h3><p>Planned, in progress, and shipped.</p></a>
+      <a class="card" href="/mail-setup/"><h3>⚙️ Setup guide</h3><p>Self-host the inbox: Worker, D1, secrets, wiring.</p></a>
     </div>
   </div>
-  <!-- TOOLS:REMOVE-END -->
-  <!-- TOOLS:INSERT-SETUP -->
 </div>
 
-<div class="foot"><div class="in">
-  <span>Powered by <b>PowerCordKit</b> · <a href="/mail/">Mail</a> · <a href="#labs">Labs</a> · <a href="#api">API</a> · <a href="/mail-setup/">Mail setup</a> · <a href="/mail-setup/#tools-only">Self-host the tools</a></span>
-  <span id="foot-env">personal</span>
-</div></div>
-
-<script>
-const $ = (id) => document.getElementById(id);
-// Mod-key gate: when the Worker sets MOD_API_KEY, /api/* (except /health)
-// needs X-Mod-Key. Prompt once per session, keep it out of URLs/storage.
-async function api(path, opts) {
-  opts = opts || {};
-  const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
-  let r = await fetch(path, Object.assign({}, opts, { headers }));
-  if (r.status === 401) {
-    let needKey = false;
-    try { needKey = (await r.clone().json()).error === 'Mod key required'; } catch (e) {}
-    if (needKey) {
-      const k = prompt('This inbox needs a mod key:');
-      if (k) {
-        sessionStorage.setItem('pck-mod-key', k);
-        headers['X-Mod-Key'] = k;
-        r = await fetch(path, Object.assign({}, opts, { headers }));
-      }
-    }
-  }
-  return r;
-}
-async function load(){
-  try {
-    const [h, inbox] = await Promise.all([
-      fetch('/api/health').then(r => r.json()),
-      api('/api/inbox').then(r => { if(!r.ok) throw 0; return r.json(); })
-    ]);
-    const items = inbox.items || [];
-    const t = items.filter(i => i.type === 'ticket').length;
-    const ideas = items.filter(i => i.type === 'idea').length;
-    $('api-pill').textContent = 'API live'; $('api-pill').className = 'pill live';
-    const host = h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi';
-    $('env').textContent = host; $('foot-env').textContent = h.env + ' • ' + host; $('host').textContent = host;
-    $('c-open').textContent = items.length + ' open'; $('c-tickets').textContent = t + ' tickets'; $('c-ideas').textContent = ideas + ' ideas';
-    $('n-open').textContent = items.length; $('n-tickets').textContent = t; $('n-ideas').textContent = ideas;
-  } catch {
-    $('api-pill').textContent = 'static mode'; $('env').textContent = 'labs';
-    $('host').textContent = 'worker backend';
-  }
-}
-document.querySelectorAll('.copy').forEach(b => b.onclick = () => {
-  navigator.clipboard.writeText($(b.dataset.c).textContent);
-  b.textContent = '✓'; setTimeout(() => b.textContent = 'Copy', 1000);
-});
-load();
-</script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
 </body>
 </html>

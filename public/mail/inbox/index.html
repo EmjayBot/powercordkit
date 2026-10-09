@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PowerCordKit Mail — Unified Mod View</title>
+<title>Inbox</title>
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
@@ -33,10 +33,7 @@
 </style>
 </head>
 <body>
-<div class="top">
-  <a class="logo" href="/"><img src="/assets/powercordkit_logo.png" alt="" /> PowerCordKit Mail</a>
-  <div class="nav"><a class="pill" href="/">Tools</a><a class="pill" href="/mail/" style="text-decoration:none">Overview</a><span class="pill mail" id="env-pill">Inbox</span></div>
-</div>
+<div id="pck-nav"></div>
 <div class="main">
   <div class="side">
     <div><h4>Servers</h4><div id="srv-filters"><div class="srv active" data-server="all"><span>All Servers</span><span id="c-all">–</span></div></div></div>
@@ -156,7 +153,7 @@ async function load() {
     $('status').textContent = data.length + ' items • Workers + D1 • E to complete';
     api('/api/servers').then((r) => r.json()).then((sj) => renderFilters(sj.servers || [], sj.types || [])).catch(() => {});
     const h = await fetch('/api/health', { cache: 'no-store' }).then(x=>x.json()).catch(()=>null);
-    if (h) { $('env-pill').textContent = 'Inbox • ' + (h.env || 'personal'); $('api-env').textContent = (h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi') + ' (Workers + D1)'; $('hook-hint').innerHTML = 'Discourse webhook:<br/>POST ' + (h.env === 'community' ? 'https://mod.tep.one/hooks/discourse' : 'https://powercordkit.emjay.fyi/hooks/discourse'); }
+    if (h) { if (window.PCK) window.PCK.right('<span class="pill">' + (h.env || 'personal') + '</span>'); $('api-env').textContent = (h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi') + ' (Workers + D1)'; $('hook-hint').innerHTML = 'Discourse webhook:<br/>POST ' + (h.env === 'community' ? 'https://mod.tep.one/hooks/discourse' : 'https://powercordkit.emjay.fyi/hooks/discourse'); }
   } catch (e) {
     // Never show fake items: this inbox only ever renders real API data.
     const code = (e && e.status) ? ('API ' + e.status) : 'API offline';
@@ -306,5 +303,7 @@ document.querySelector('.side').addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E') { if (sel && document.activeElement.tagName !== 'INPUT') { sel.archived ? reopen(sel.id) : complete(sel.id); } } if (e.key === 'Escape') closeM(); });
 load();
 </script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
 </body>
 </html>

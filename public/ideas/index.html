@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Idea Capture — PowerCordKit</title>
+<title>Idea Capture</title>
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
@@ -34,7 +34,7 @@
 </style>
 </head>
 <body>
-<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Idea Capture</span><a href="/roadmap/" style="font-size:12px;color:var(--m)">Roadmap</a><a href="/mail/" style="font-size:12px;color:var(--m)">Overview</a><a href="/mail/inbox/" style="margin-left:auto;font-size:12px;color:var(--m)">Full inbox →</a></div>
+<div id="pck-nav"></div>
 <div class="wrap">
   <div class="bar"><input class="inp search" id="q" placeholder="Search ideas…" /><button class="btn" id="new">+ New idea</button></div>
   <div class="form" id="form">
@@ -109,5 +109,7 @@ $('send').onclick = async () => {
 };
 load();
 </script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
 </body>
 </html>

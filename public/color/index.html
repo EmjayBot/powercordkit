@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Color Lab — PowerCordKit</title>
+<title>Color Lab</title>
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
@@ -36,7 +36,7 @@ code{background:var(--p2);border:1px solid var(--bd);border-radius:6px;padding:2
 </style>
 </head>
 <body>
-<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Color Lab</span><a href="/embeds/" style="margin-left:auto;font-size:12px;color:var(--m)">Open in Embed Lab →</a></div>
+<div id="pck-nav"></div>
 <div class="wrap">
   <div class="card">
     <h3>🎨 Pick a color</h3>
@@ -90,5 +90,7 @@ $('sw').innerHTML = presets.map(p => '<div class="sw" data-c="'+p+'" style="back
 document.querySelectorAll('.sw').forEach(s => s.onclick = () => apply(s.dataset.c));
 apply('#5865F2');
 </script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
 </body>
 </html>

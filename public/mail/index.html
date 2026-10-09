@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Mail Overview — PowerCordKit</title>
+<title>Mail</title>
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
@@ -47,11 +47,7 @@ code{background:var(--p2);border:1px solid var(--bd);border-radius:6px;padding:2
 </style>
 </head>
 <body>
-<div class="top">
-  <a class="logo" href="/"><img src="/assets/powercordkit_logo.png" alt="" /> PowerCordKit</a>
-  <span style="color:var(--m)">/ Mail overview</span>
-  <div class="sp"><span class="pill" id="env">…</span><span class="pill off" id="api">connecting…</span></div>
-</div>
+<div id="pck-nav"></div>
 <div class="wrap">
   <h1>📬 Mail overview</h1>
   <div class="sub">Every queue at a glance — Discord servers + forum in one tap. <span id="host"></span></div>
@@ -77,9 +73,11 @@ code{background:var(--p2);border:1px solid var(--bd);border-radius:6px;padding:2
 
   <div class="foot">
     Feeds: Discord context menu → <code>POST /hooks/discord</code> · Discourse webhooks → <code>POST /hooks/discourse</code> · forums via <code>POST /hooks/:name</code> (<code>nodebb</code>, <code>flarum</code>, <code>lemmy</code>, <code>custom</code>)<br/>
-    <a href="/">← Back to all PowerCordKit tools</a> · <a href="/mail-setup/">How to self-host this inbox</a>
+    <a href="/">← All tools</a> · <a href="/mail-setup/">How to self-host this inbox</a>
   </div>
 </div>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
@@ -112,6 +110,10 @@ function row(d){
 function col(el, list, empty){
   $(el).innerHTML = list.length ? list.slice(0,4).map(row).join('') : '<div class="empty">' + empty + '</div>';
 }
+let pillState = { api: 'connecting…', cls: 'off', env: '…' };
+function renderPills(){ if (window.PCK) window.PCK.right('<span class="pill">' + esc(pillState.env) + '</span><span class="pill ' + pillState.cls + '">' + esc(pillState.api) + '</span>'); }
+function setPills(api, cls, env){ pillState = { api: api, cls: cls, env: env }; renderPills(); }
+window.PCK_ON_NAV = renderPills;
 async function load(){
   try {
     const [h, inbox] = await Promise.all([
@@ -119,8 +121,7 @@ async function load(){
       api('/api/inbox').then(r => { if(!r.ok) { const err = new Error('API ' + r.status); err.status = r.status; throw err; } return r.json(); })
     ]);
     const items = inbox.items || [];
-    $('api').textContent = 'API live'; $('api').className = 'pill live';
-    $('env').textContent = h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi';
+    setPills('API live', 'live', h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi');
     $('host').textContent = 'on ' + (h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi');
     const t = items.filter(i => i.type === 'ticket'), ideas = items.filter(i => i.type === 'idea');
     $('s-open').textContent = items.length;
@@ -133,8 +134,7 @@ async function load(){
   } catch (e) {
     // Never show fake data: this inbox only ever renders real API data.
     const code = (e && (e.code || e.status)) || 'offline';
-    $('api').textContent = 'Locked'; $('api').className = 'pill off';
-    $('env').textContent = 'mod key required';
+    setPills('Locked', 'off', 'mod key required');
     $('s-open').textContent = '–'; $('s-tickets').textContent = '–'; $('s-ideas').textContent = '–'; $('s-unassigned').textContent = '–';
     const locked = '<div class="empty">🔒 Enter the mod key to load.<br/><button class="unlock-btn" style="margin-top:8px;background:#5865F2;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer">Enter mod key</button><div style="margin-top:10px;font-size:11px;opacity:.6">API: ' + esc(code) + '</div></div>';
     $('c-tickets').innerHTML = locked; $('c-ideas').innerHTML = locked; $('c-recent').innerHTML = locked;

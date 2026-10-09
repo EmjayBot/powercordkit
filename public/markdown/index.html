@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Markdown Lab — PowerCordKit</title>
+<title>Markdown Lab</title>
 <link rel="icon" href="/assets/powercordkit_logo.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
@@ -43,7 +43,7 @@ textarea{background:var(--p2);border:1px solid var(--bd);border-radius:8px;paddi
 </style>
 </head>
 <body>
-<div class="top"><a href="/"><img src="/assets/powercordkit_logo.png" alt="" style="vertical-align:-7px"/> PowerCordKit</a><span style="color:var(--m)">/ Markdown Lab</span><button class="btn" id="copy" style="margin-left:auto">Copy source</button></div>
+<div id="pck-nav"></div>
 <div class="wrap">
   <div class="card"><h3>Discord markdown source — full editor</h3>
   <div class="toolbar">
@@ -190,5 +190,7 @@ $('chat').onclick = () => {
 };
 render();
 </script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
 </body>
 </html>
