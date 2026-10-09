@@ -34,6 +34,9 @@
     "PERSONAL_DOMAIN": "powercordkit.emjay.fyi",
     "COMMUNITY_DOMAIN": "mod.tep.one",
     "DEFAULT_SERVER": "tep.one",
+    "DISCORD_CLIENT_ID": "1557873013309833369",
+    "DISCORD_GUILD_ID": "633351482128728064",
+    "DISCORD_MOD_ROLE_IDS": "633351965761339392,1150260858748932198,633353998287503390",
     "FEED_MAP": "{\"channels\":[{\"guild\":\"508790398873894915\",\"channel\":\"511665989210079252\",\"server\":\"tep-urth\",\"type\":\"ticket\"},{\"guild\":\"508790398873894915\",\"channel\":\"1252432781653315634\",\"server\":\"tep-urth\",\"type\":\"ticket\"}],\"threads\":[{\"guild\":\"633351482128728064\",\"parent\":\"894920335139409983\",\"server\":\"the-east-pacific\",\"type\":\"ticket\"},{\"guild\":\"633351482128728064\",\"parent\":\"1114601767724920893\",\"server\":\"the-east-pacific\",\"type\":\"support\"}]}"
   },
   "d1_databases": [
