@@ -111,16 +111,16 @@ export function resolveMentions(
     .replace(/<a?:(\w+):\d+>/g, ':$1:');
 }
 
-// Apply or remove a forum tag on a Discord thread (PATCH /channels/{id}).
-// Requires Manage Threads. Best-effort: returns a reason instead of throwing.
-export async function setForumTag(
+// Apply/remove a forum tag and/or open/close a thread (PATCH /channels/{id}).
+// "Close" = archive + lock so the post accepts no further replies. Requires
+// Manage Threads. Best-effort: returns a reason instead of throwing.
+export async function setThreadState(
   token: string,
   threadId: string,
-  tagName: string,
-  remove = false,
+  opts: { tagName?: string; removeTag?: boolean; archive?: boolean },
   fetchFn: typeof fetch = fetch,
   log: Logger = noopLog,
-): Promise<{ ok: boolean; tag?: string; reason?: string; tags?: string[]; skipped?: string }> {
+): Promise<{ ok: boolean; tag?: string; closed?: boolean; reason?: string; skipped?: string }> {
   const base = 'https://discord.com/api/v10';
   const auth = { Authorization: 'Bot ' + token };
   const get = async (p: string): Promise<any> => {
@@ -133,32 +133,48 @@ export async function setForumTag(
     }
   };
   const th = await get(`/channels/${threadId}`);
-  if (!th || !th.parent_id) return { ok: false, reason: 'not-a-forum-thread' };
-  const parent = await get(`/channels/${th.parent_id}`);
-  const tags: { id: string; name: string }[] = parent?.available_tags ?? [];
-  if (!tags.length) return { ok: false, reason: 'no-forum-tags' };
-  const want = tagName.toLowerCase();
-  const keys = ['complete', 'completed', 'resolved', 'closed', 'done'];
-  const match =
-    tags.find((t) => t.name.toLowerCase() === want) ??
-    tags.find((t) => keys.some((k) => t.name.toLowerCase().includes(k)));
-  if (!match) return { ok: false, reason: 'no-matching-tag', tags: tags.map((t) => t.name) };
-  const current: string[] = th.applied_tags ?? [];
-  if (remove && !current.includes(match.id)) return { ok: true, skipped: 'tag-not-applied', tag: match.name };
-  if (!remove && current.includes(match.id)) return { ok: true, skipped: 'tag-already-applied', tag: match.name };
-  const next = remove
-    ? current.filter((id) => id !== match.id)
-    : Array.from(new Set([...current, match.id]));
+  if (!th) return { ok: false, reason: 'not-a-thread' };
+
+  const body: Record<string, unknown> = {};
+  let tag: string | undefined;
+
+  if (opts.tagName && th.parent_id) {
+    const parent = await get(`/channels/${th.parent_id}`);
+    const tags: { id: string; name: string }[] = parent?.available_tags ?? [];
+    const want = opts.tagName.toLowerCase();
+    const keys = ['complete', 'completed', 'resolved', 'closed', 'done'];
+    const match =
+      tags.find((t) => t.name.toLowerCase() === want) ??
+      tags.find((t) => keys.some((k) => t.name.toLowerCase().includes(k)));
+    if (match) {
+      tag = match.name;
+      const current: string[] = th.applied_tags ?? [];
+      const changed = opts.removeTag ? current.includes(match.id) : !current.includes(match.id);
+      if (changed) {
+        body.applied_tags = opts.removeTag
+          ? current.filter((id) => id !== match.id)
+          : Array.from(new Set([...current, match.id]));
+      }
+    }
+  }
+
+  if (typeof opts.archive === 'boolean') {
+    body.archived = opts.archive;
+    body.locked = opts.archive;
+  }
+
+  if (Object.keys(body).length === 0) return { ok: true, tag, skipped: 'no-op' };
+
   const r = await fetchFn(base + `/channels/${threadId}`, {
     method: 'PATCH',
     headers: { ...auth, 'content-type': 'application/json' },
-    body: JSON.stringify({ applied_tags: next }),
+    body: JSON.stringify(body),
   });
   if (!r.ok) {
-    log('warn', 'apply forum tag failed', { status: r.status, thread: threadId });
-    return { ok: false, reason: 'patch-' + r.status };
+    log('warn', 'set thread state failed', { status: r.status, thread: threadId });
+    return { ok: false, tag, reason: 'patch-' + r.status };
   }
-  return { ok: true, tag: match.name };
+  return { ok: true, tag, closed: opts.archive === true };
 }
 
 // Post a message into a Discord thread (e.g. assignment notice). Best-effort.

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { pollDiscord, backfillDiscordThreads, setForumTag, postThreadMessage } from './poll';
+import { pollDiscord, backfillDiscordThreads, setThreadState } from './poll';
 import { verifyAccessJwt } from './access';
 import {
   discordLoginUrl,
@@ -262,8 +262,13 @@ async function requireAdminKey(env: Bindings, headers: Headers): Promise<boolean
   return timingSafeEqualString(given, s);
 }
 
-// Mirror complete/reopen onto the Discord forum thread's tags (best effort).
-async function syncDiscordTag(env: Bindings, id: string, remove: boolean): Promise<unknown> {
+// Mirror complete/reopen onto the Discord thread: apply/remove the tag and
+// close (archive+lock) or reopen it. Best effort.
+async function syncDiscordTag(
+  env: Bindings,
+  id: string,
+  opts: { removeTag?: boolean; archive?: boolean },
+): Promise<unknown> {
   try {
     if (!env.DISCORD_BOT_TOKEN) return { skipped: 'no-token' };
     const row = await env.DB.prepare(`SELECT url, src FROM inbox_items WHERE id = ?`)
@@ -272,11 +277,10 @@ async function syncDiscordTag(env: Bindings, id: string, remove: boolean): Promi
     if (!row || row.src !== 'discord' || !row.url) return { skipped: 'not-discord' };
     const threadId = (row.url || '').split('/').pop() || '';
     if (!/^\d+$/.test(threadId)) return { skipped: 'no-thread-id' };
-    return await setForumTag(
+    return await setThreadState(
       env.DISCORD_BOT_TOKEN,
       threadId,
-      env.DISCORD_COMPLETE_TAG || 'Completed',
-      remove,
+      { tagName: env.DISCORD_COMPLETE_TAG || 'Completed', ...opts },
       fetch,
       (level, msg, extra) => jsonLog(level, msg, extra),
     );
@@ -544,14 +548,12 @@ app.post('/api/inbox/:id/assign', async (c) => {
   try {
     const id = c.req.param('id');
     const body = await readJson<{ assigned?: string }>(c);
-    // "@me" (or empty) resolves to the logged-in mod's Discord name/id.
+    // "@me" (or empty) resolves to the logged-in mod's Discord name.
     let name = (body.assigned ?? '').trim();
-    let uid = '';
     if (name === '@me' || name === '') {
       const sess = c.env.SESSION_SECRET;
       const s = sess ? await verifySession(readCookie(c.req.header('cookie'), 'pck_session'), sess) : null;
       name = (s?.uname as string) || name;
-      uid = (s?.uid as string) || '';
     }
     const r = await c.env.DB.prepare(`UPDATE inbox_items SET assigned = ? WHERE id = ?`)
       .bind(name || null, id)
@@ -559,26 +561,8 @@ app.post('/api/inbox/:id/assign', async (c) => {
     if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
       return bad('item not found', 404);
     }
-    // Best effort: announce the assignment in the Discord thread.
-    let discord: unknown = { skipped: 'n/a' };
-    if (c.env.DISCORD_BOT_TOKEN && uid && name) {
-      const row = await c.env.DB.prepare(`SELECT url, src FROM inbox_items WHERE id = ?`)
-        .bind(id)
-        .first<{ url: string; src: string }>();
-      if (row?.src === 'discord' && row.url) {
-        const tid = (row.url || '').split('/').pop() || '';
-        if (/^\d+$/.test(tid)) {
-          discord = await postThreadMessage(
-            c.env.DISCORD_BOT_TOKEN,
-            tid,
-            `Assigned to <@${uid}>`,
-            fetch,
-            (level, msg, extra) => jsonLog(level, msg, extra),
-          );
-        }
-      }
-    }
-    return c.json({ ok: true, assigned: name, discord });
+    // Silent tracking: assignment is stored in the inbox only, not posted.
+    return c.json({ ok: true, assigned: name });
   } catch (err) {
     const passthrough = passthroughResponse(err);
     if (passthrough) return passthrough;
@@ -612,7 +596,7 @@ app.post('/api/inbox/:id/complete', async (c) => {
     if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
       return bad('item not found', 404);
     }
-    const discord = await syncDiscordTag(c.env, id, false);
+    const discord = await syncDiscordTag(c.env, id, { archive: true });
     return c.json({ ok: true, discord });
   } catch (err) {
     jsonLog('error', 'complete failed', { error: String(err) });
@@ -630,7 +614,7 @@ app.post('/api/inbox/:id/reopen', async (c) => {
     if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
       return bad('item not found', 404);
     }
-    const discord = await syncDiscordTag(c.env, id, true);
+    const discord = await syncDiscordTag(c.env, id, { removeTag: true, archive: false });
     return c.json({ ok: true, discord });
   } catch (err) {
     jsonLog('error', 'reopen failed', { error: String(err) });
