@@ -222,6 +222,15 @@ document.querySelectorAll('pre').forEach(pre => {
   const b = pre.querySelector('.copy');
   if(b) b.onclick = () => { navigator.clipboard.writeText(pre.textContent.replace('Copy','').trim()); b.textContent = '✓'; setTimeout(() => b.textContent = 'Copy', 1200); };
 });
+// If the deployment turned the setup guide off (features.mailSetup = false),
+// hide the instructions even on a direct visit.
+window.PCK_ON_NAV = function () {
+  var f = (window.PCK && window.PCK.config && window.PCK.config.features) || {};
+  if (f.mailSetup === false) {
+    var w = document.querySelector('.wrap');
+    if (w) w.innerHTML = '<div style="padding:60px 20px;text-align:center;color:#8a8a90"><div style="font-size:34px;margin-bottom:10px">⚙️</div><h1 style="font-size:20px;color:#f0f0f2;margin:0 0 6px">Setup guide is off</h1><p style="font-size:14px">This deployment has turned the setup instructions off.</p><p style="margin-top:14px"><a href="/" style="color:#5865F2">← Back to tools</a> · <a href="/mail/" style="color:#5865F2">Mail overview</a></p></div>';
+  }
+};
 </script>
 <div id="pck-foot"></div>
 <script src="/assets/site.js"></script>
