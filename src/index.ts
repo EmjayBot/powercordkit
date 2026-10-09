@@ -13,6 +13,7 @@ import {
   setCookie,
   clearCookie,
 } from './discord-oauth';
+import { verifyDiscordRequest } from './ed25519';
 
 type Bindings = {
   DB: D1Database;
@@ -35,6 +36,7 @@ type Bindings = {
   DISCORD_MOD_ROLE_ID?: string;
   DISCORD_MOD_ROLE_IDS?: string;
   DISCORD_COMPLETE_TAG?: string;
+  DISCORD_PUBLIC_KEY?: string;
   SESSION_SECRET?: string;
   DISCORD_BOT_TOKEN?: string;
   FEED_MAP?: string;
@@ -680,6 +682,82 @@ app.post('/api/admin/backfill-threads', async (c) => {
   } catch (err) {
     jsonLog('error', 'backfill threads failed', { error: String(err) });
     return bad('Backfill failed', 500);
+  }
+});
+
+// Discord interactions (message context-menu "Save as Idea"). Public route:
+// Discord verifies itself via the Ed25519 signature, so no mod auth here.
+app.post('/hooks/discord-interactions', async (c) => {
+  const pub = c.env.DISCORD_PUBLIC_KEY;
+  if (!pub) return new Response('Interactions not configured', { status: 500 });
+  const raw = await c.req.text();
+  if (raw.length > maxPayload(c)) return new Response('Payload too large', { status: 413 });
+  const ok = await verifyDiscordRequest(
+    pub,
+    c.req.header('X-Signature-Ed25519'),
+    c.req.header('X-Signature-Timestamp'),
+    raw,
+  );
+  if (!ok) return new Response('Invalid signature', { status: 401 });
+  let body: {
+    type?: number;
+    guild_id?: string;
+    channel_id?: string;
+    data?: {
+      type?: number;
+      target_id?: string;
+      resolved?: { messages?: Record<string, { content?: string; author?: { username?: string; global_name?: string }; guild_id?: string; channel_id?: string }> };
+    };
+  };
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return bad('Invalid JSON', 400);
+  }
+  if (body.type === 1) return c.json({ type: 1 }); // PING -> PONG
+  if (body.type === 2 && body.data?.type === 3) {
+    const targetId = body.data.target_id ?? '';
+    const msg = body.data.resolved?.messages?.[targetId];
+    const content = (msg?.content ?? '').slice(0, 4000);
+    const author = msg?.author?.global_name || msg?.author?.username || 'discord';
+    const guildId = msg?.guild_id || body.guild_id || '';
+    const channelId = msg?.channel_id || body.channel_id || '';
+    const url = guildId && channelId && targetId
+      ? `https://discord.com/channels/${guildId}/${channelId}/${targetId}`
+      : '#';
+    await insertInboxItem(c.env.DB, {
+      server: 'ideas',
+      type: 'idea',
+      tag: 'idea',
+      title: (content.split('\n')[0] || 'Idea from Discord').slice(0, 120),
+      content,
+      author,
+      by: 'discord-command',
+      src: 'discord',
+      url,
+    }, 'ideas');
+    jsonLog('info', 'idea saved from discord command', { target: targetId });
+    return c.json({ type: 4, data: { content: '📌 Saved to the inbox as an idea.', flags: 64 } });
+  }
+  return c.json({ type: 4, data: { content: 'Unsupported interaction.', flags: 64 } });
+});
+
+// Register the "Save as Idea" message context-menu command (one-time; admin).
+app.post('/api/admin/register-commands', async (c) => {
+  try {
+    const token = c.env.DISCORD_BOT_TOKEN;
+    const appId = c.env.DISCORD_CLIENT_ID;
+    if (!token || !appId) return bad('Discord not configured', 400);
+    const r = await fetch(`https://discord.com/api/v10/applications/${appId}/commands`, {
+      method: 'POST',
+      headers: { Authorization: 'Bot ' + token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Save as Idea', type: 3, integration_types: [0], contexts: [0, 1, 2] }),
+    });
+    const j = (await r.json()) as unknown;
+    return c.json({ ok: r.ok, status: r.status, command: j });
+  } catch (err) {
+    jsonLog('error', 'register commands failed', { error: String(err) });
+    return bad('Register failed', 500);
   }
 });
 
