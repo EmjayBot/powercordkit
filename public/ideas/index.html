@@ -57,7 +57,7 @@ async function api(path, opts) {
   if (r.status === 401) {
     let info = {};
     try { info = await r.clone().json(); } catch (e) {}
-    if (info.login) { window.location.href = '/api/auth/login'; return r; }
+    if (info.login) { window.__pckLogin = true; return r; }
     if (info.error === 'Mod key required') {
       const k = prompt('This inbox needs a mod key:');
       if (k) {
@@ -78,7 +78,7 @@ async function load(){
     const j = await r.json();
     items = j.items || [];
     $('status').textContent = items.length + ' ideas in queue • backed by Mail API';
-  } catch { $('status').textContent = 'API offline — run wrangler dev (or check deployment)'; items = []; }
+  } catch { $('status').innerHTML = window.__pckLogin ? '🔒 Signed out — <a href="/api/auth/login" style="color:#5865F2">Log in with Discord</a>' : 'API offline — run wrangler dev (or check deployment)'; items = []; }
   render();
 }
 function render(){

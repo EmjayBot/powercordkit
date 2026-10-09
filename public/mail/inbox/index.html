@@ -92,7 +92,7 @@ async function api(path, opts) {
   if (r.status === 401) {
     let info = {};
     try { info = await r.clone().json(); } catch (e) {}
-    if (info.login) { window.location.href = '/api/auth/login'; return r; }
+    if (info.login) { window.__pckLogin = true; return r; }
     if (info.error === 'Mod key required') {
       const k = prompt('This inbox needs a mod key:');
       if (k) {
@@ -157,9 +157,11 @@ async function load() {
   } catch (e) {
     // Never show fake items: this inbox only ever renders real API data.
     const code = (e && e.status) ? ('API ' + e.status) : 'API offline';
-    $('status').textContent = 'Locked — ' + code;
+    $('status').textContent = window.__pckLogin ? 'Signed out' : ('Locked — ' + code);
     $('items').innerHTML = '';
-    $('detail').innerHTML = '<div style="padding:60px 20px;text-align:center;color:var(--m)"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-weight:600;color:var(--t)">Mod key required</div><div style="font-size:13px;margin:8px auto;max-width:300px;line-height:1.5">This inbox is private. Enter the mod key to load real items — no sample data is ever shown.</div><button class="unlock-btn" style="margin-top:10px;background:#5865F2;color:#fff;border:0;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer">Enter mod key</button><div style="margin-top:10px;font-size:11px;opacity:.6">' + code + '</div></div>';
+    $('detail').innerHTML = window.__pckLogin
+      ? '<div style="padding:60px 20px;text-align:center;color:var(--m)"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-weight:600;color:var(--t)">Signed out</div><div style="font-size:13px;margin:8px auto;max-width:320px;line-height:1.5">Log in with Discord to load the inbox.</div><a href="/api/auth/login" style="display:inline-block;margin-top:10px;background:#5865F2;color:#fff;text-decoration:none;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700">Log in with Discord</a><div style="margin-top:10px;font-size:11px;opacity:.6">' + code + '</div></div>'
+      : '<div style="padding:60px 20px;text-align:center;color:var(--m)"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-weight:600;color:var(--t)">Mod key required</div><div style="font-size:13px;margin:8px auto;max-width:320px;line-height:1.5">This inbox is private. Enter the mod key to load real items — no sample data is ever shown.</div><button class="unlock-btn" style="margin-top:10px;background:#5865F2;color:#fff;border:0;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer">Enter mod key</button><div style="margin-top:10px;font-size:11px;opacity:.6">' + code + '</div></div>';
     document.querySelectorAll('.unlock-btn').forEach((b) => b.onclick = () => { window.__pckLocked = false; sessionStorage.removeItem('pck-mod-key'); load(); });
     render();
     return;
