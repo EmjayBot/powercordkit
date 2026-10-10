@@ -195,6 +195,9 @@ client.login(process.env.DISCORD_BOT_TOKEN);</pre>
   -d '{"status":"in-progress","date":"2026-01-31"}'</pre>
   <p><code>GET /api/roadmap</code> is public (read-only) and powers the <code>/roadmap/</code> page (Planned / In Progress / Shipped). Set <code>{"roadmap":false}</code> to remove an item.</p>
 
+  <h2 id="modtools"><span class="n">★</span>Mod tools</h2>
+  <p><b>Ban Sync, Timeouts, Infractions, Appeals, and per-user Notes</b> — moderation across your Discord servers + Discourse on the same D1 + Worker. Setup and usage how-to (bot permissions, <code>MOD_TOOL_SERVERS</code>, Discourse suspend key, endpoints, rate limits): <a href="/ai-setup.md#mod-tools"><code>/ai-setup.md → Mod tools</code></a>. Foundation tables: <code>migrations/0006_modtools.sql</code>. No "Lab" naming.</p>
+
   <h2 id="servers"><span class="n">★</span>How mail works across multiple servers</h2>
   <p>One inbox watches many Discord servers (guilds) plus forums. The model is deliberately simple:</p>
   <ul><li><b>Open registry, no pre-registration.</b> Every mailed item carries a <code>server</code> string (e.g. a guild slug). The first mail from a new server creates it — <code>GET /api/servers</code> derives the live registry (open counts + per-type breakdowns) from the data, and the inbox filter bar renders from it.</li><li><b>Scoped credentials.</b> Set <code>DEFAULT_SERVER</code> per deployment for items mailed without a server. Bots authenticate per server: mint a token with <code>POST /api/servers/:id/token</code> (admin: global <code>X-Powercordkit-Secret</code>) and send it as <code>X-Server-Token</code> — only that server's mail is accepted with it. Rotate with POST again, revoke with <code>DELETE /api/servers/:id/token</code>. Tokens are SHA-256 hashed in D1; the plaintext shows once.</li><li><b>Lock indicators.</b> Servers with a token row show 🔒 in the inbox filter.</li></ul>

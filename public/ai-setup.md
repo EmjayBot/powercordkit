@@ -185,6 +185,42 @@ Promote an idea: `POST /api/inbox/<id>/roadmap` with `{"status":"planned|in-prog
 }
 ```
 
+## Mod tools (Ban Sync · Timeouts · Infractions · Appeals · Notes)
+
+Moderate across multiple Discord servers (and Discourse) from one place, on the
+same Mail D1 + Worker. Product naming has no "Lab".
+
+**Database** — `migrations/0006_modtools.sql` adds `bans`, `timeouts`,
+`infractions`, `appeals`, `user_notes`, `audit_log` (counts as the foundation).
+
+**Config**
+- `MOD_TOOL_SERVERS` (wrangler var, JSON): map of `"<slug>": { "guild": "<guild-id>" }`
+  for each server you moderate via Discord.
+- Secrets: if syncing suspends to Discourse, add `DISCOURSE_BASE_URL` and
+  `DISCOURSE_ADMIN_KEY` (Admin → API → Create key, `suspend` permission).
+
+**Bot permissions** — the bot needs **Ban Members** (bans) and
+**Moderate Members / Manage Members** (timeouts) on every guild in
+`MOD_TOOL_SERVERS`, plus View Channel on the mod channels.
+
+**Endpoints** (auth = mod session / Access / `MOD_API_KEY`, role-gated; each
+write is audited and rate-limited):
+
+| Tool | Route | Notes |
+|---|---|---|
+| Bans | `POST/GET /api/bans` · `POST /api/bans/:id/unban` | `PUT/DELETE /guilds/{g}/bans/{u}` (parallel, retry); `POST /admin/users/{id}/suspend` on Discourse |
+| Timeouts | `POST/GET /api/timeouts` · `POST /api/timeouts/:id/remove` | `PATCH /guilds/{g}/members/{u}` `communication_disabled_until`; 5-min cron expires + deactivates |
+| Infractions | `POST/GET /api/infractions` · `GET /api/infractions/:user/timeline` | Adds warnings; timeline merges bans/timeouts/warnings/mail/appeals for a user |
+| Appeals | `POST /hooks/appeal` (public) · `GET /api/appeals` · `POST /api/appeals/:id/approve|deny` | Public form (ban validated, 1 per ban/24h, honeypot, IP *hash*); creates a Mail item `type=appeal`; Approve triggers the Ban Sync unban |
+| Notes | `POST/GET /api/user-notes` · `GET /api/user-notes/:user` | Per-user private notes surfaced in Mail detail + every tool |
+
+**Rates:** bans 5/min, timeouts 10/min, appeals 1 per ban per 24h, notes
+20/min (per mod).
+
+**Workflow:** Mail is the hub — approve an appeal from the inbox to trigger the
+unban; "archive → link infraction" records it on the user; user notes follow the
+user across servers and appear in Mail detail, Infractions, Bans, and Timeouts.
+
 ## Suggested prompt to start
 
 > Read `AI_SETUP.md` in this repo. Help me self-host the Mail inbox on my Cloudflare account. Ask me for every required input first (I'll provide a Discord app and server). Run the setup steps, verify each, and keep all secrets out of the chat.

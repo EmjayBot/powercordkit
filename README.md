@@ -38,6 +38,22 @@ The committed configs are generic placeholders (no account IDs, no domains, `REP
 | Markdown | `/markdown/` | Static only (clipboard) |
 | Webhook | `/webhook/` | Direct browser POST to Discord |
 
+## Mod tools (Ban Sync · Timeouts · Infractions · Appeals · Notes)
+
+Moderation across Discord servers + Discourse, on the same Mail D1 + Worker.
+How-to and config live in [`AI_SETUP.md`](AI_SETUP.md) (also `/ai-setup.md`).
+
+| Tool | Route (API) | What it does |
+|------|-------------|--------------|
+| Ban Sync | `/api/bans` · `/api/bans/:id/unban` | One ban → all servers (parallel, retry) + Discourse suspend. D1 `bans` row with per-server status. |
+| Timeouts | `/api/timeouts` · `/api/timeouts/:id/remove` | Per-server timeouts with countdowns, bulk timeout, expiry cron. |
+| Infractions | `/api/infractions` · `/api/infractions/:user/timeline` | Timeline of bans/timeouts/warnings/mail for a user; add warnings. |
+| Appeals | `/hooks/appeal` · `/api/appeals/...` | Public appeal form → creates a Mail `type=appeal`; Approve triggers unban. |
+| Notes | `/api/user-notes` | Private per-user notes shown in Mail detail + every tool. |
+
+Foundation: `migrations/0006_modtools.sql` (`bans`, `timeouts`, `infractions`,
+`appeals`, `user_notes`, `audit_log`). Backend = Workers + D1; no "Lab" naming.
+
 ## Quick start (local)
 
 ```powershell
