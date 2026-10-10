@@ -18,7 +18,7 @@
       "header": {
         "brand": "PowerCordKit",
         "links": [
-          { "label": "Tools", "href": "/" },
+          { "label": "Toolkit", "href": "/" },
           { "label": "Mail", "href": "/mail/" },
           { "label": "Command", "href": "/modtools/" },
           { "label": "Ideas", "href": "/ideas/" },
@@ -42,7 +42,7 @@
     "logo": "/assets/powercordkit_logo.png",
     "home": "/",
     "links": [
-      { "label": "Tools", "href": "/" },
+      { "label": "Toolkit", "href": "/" },
       { "label": "Community Inbox", "href": "/mail/" },
       { "label": "Ideas", "href": "/ideas/" },
       { "label": "Roadmap", "href": "/roadmap/" },
