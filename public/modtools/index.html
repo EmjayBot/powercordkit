@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mod Tools</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90;--ok:#3ba55d;--no:#ed4245}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.wrap{max-width:1000px;margin:0 auto;padding:22px 16px 80px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--m);font-size:13px;margin:0 0 16px}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--bd);margin-bottom:16px;flex-wrap:wrap}
+.tab{padding:9px 14px;font-size:13px;color:var(--m);cursor:pointer;border:1px solid transparent;border-radius:10px 10px 0 0;font-weight:600}
+.tab.on{background:var(--p2);color:var(--t);border-color:var(--bd) var(--bd) transparent}
+.pane{display:none}.pane.on{display:block}
+.form{background:var(--p);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.inp{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;color:var(--t);font-size:13px;outline:none;flex:1;min-width:120px}
+select.inp{flex:0 0 auto}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.chip{font-size:11px;padding:4px 9px;border-radius:999px;background:var(--p2);border:1px solid var(--bd);cursor:pointer;color:var(--m)}
+.chip.sel{border-color:var(--b);color:var(--t)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--m);text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd)}
+td{padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
+.ok{color:var(--ok)}.no{color:var(--no)}.dim{color:var(--m);font-size:12px}
+.empty{color:var(--m);font-size:13px;padding:20px 4px}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:130px}
+</style>
+</head>
+<body>
+<div id="pck-nav"></div>
+<div class="wrap">
+  <h1>🛠️ Mod Tools</h1>
+  <div class="sub">Bans · Timeouts · Infractions · Appeals · Notes — testing on the dev site.</div>
+
+  <div class="tabs">
+    <div class="tab on" data-t="bans">Bans</div>
+    <div class="tab" data-t="timeouts">Timeouts</div>
+    <div class="tab" data-t="infractions">Infractions</div>
+    <div class="tab" data-t="appeals">Appeals</div>
+  </div>
+
+  <!-- BANS -->
+  <div class="pane on" id="pane-bans">
+    <div class="form">
+      <input class="inp" id="b-user" placeholder="User ID / snowflake" />
+      <input class="inp" id="b-reason" placeholder="Reason" style="flex:2" />
+      <input class="inp" id="b-mins" placeholder="Temp mins (blank = perm)" style="max-width:140px" />
+      <div class="chips" id="b-servers"></div>
+      <button class="btn" id="b-create">Ban</button>
+    </div>
+    <div id="b-list"></div>
+  </div>
+
+  <!-- TIMEOUTS -->
+  <div class="pane" id="pane-timeouts">
+    <div class="form">
+      <input class="inp" id="t-user" placeholder="User ID / snowflake" />
+      <select class="inp" id="t-server"></select>
+      <input class="inp" id="t-mins" value="60" placeholder="Minutes" style="max-width:110px" />
+      <input class="inp" id="t-reason" placeholder="Reason" style="flex:2" />
+      <button class="btn" id="t-create">Timeout</button>
+    </div>
+    <div id="t-list"></div>
+  </div>
+
+  <!-- INFRACTIONS -->
+  <div class="pane" id="pane-infractions">
+    <div class="form">
+      <input class="inp" id="i-user" placeholder="User ID to look up / add to" />
+      <select class="inp" id="i-type"><option>warn</option><option>mute</option><option>kick</option><option>ban</option><option>note</option></select>
+      <input class="inp" id="i-reason" placeholder="Reason" style="flex:2" />
+      <button class="btn" id="i-add">Add</button>
+      <button class="btn ghost" id="i-load">Timeline</button>
+    </div>
+    <div id="i-list"></div>
+  </div>
+
+  <!-- APPEALS -->
+  <div class="pane" id="pane-appeals">
+    <div class="form">
+      <select class="inp" id="a-status"><option>open</option><option>approved</option><option>denied</option></select>
+      <button class="btn" id="a-load">Refresh</button>
+    </div>
+    <div id="a-list"></div>
+  </div>
+</div>
+<script src="/assets/site.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
+  let r = await fetch(path, Object.assign({}, opts, { headers }));
+  if (r.status === 401) {
+    let info = {};
+    try { info = await r.clone().json(); } catch (e) {}
+    if (info.login) { window.location.href = '/api/auth/login'; return r; }
+    if (info.error === 'Mod key required') {
+      const k = prompt('Mod key required:');
+      if (k) { sessionStorage.setItem('pck-mod-key', k); headers['X-Mod-Key'] = k; r = await fetch(path, Object.assign({}, opts, { headers })); }
+    }
+  }
+  return r;
+}
+
+const SERVERS = ['tep', 'tep-urth', 'discourse'];
+const selB = new Set();
+
+// Tabs
+document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach((x) => x.classList.remove('on'));
+  document.querySelectorAll('.pane').forEach((x) => x.classList.remove('on'));
+  t.classList.add('on');
+  $('pane-' + t.dataset.t).classList.add('on');
+});
+
+// Server chips (bans)
+function chips() {
+  $('b-servers').innerHTML = SERVERS.map((s) => '<span class="chip' + (selB.has(s) ? ' sel' : '') + '" data-s="' + s + '">' + s + '</span>').join('') || '';
+  document.querySelectorAll('#b-servers .chip').forEach((c) => c.onclick = () => { const s = c.dataset.s; selB.has(s) ? selB.delete(s) : selB.add(s); chips(); });
+}
+chips();
+
+// Timeout server select
+$('t-server').innerHTML = SERVERS.filter((s) => s !== 'discourse').map((s) => '<option>' + s + '</option>').join('');
+
+// Bans
+async function loadBans() {
+  const r = await api('/api/bans'); if (!r.ok) return;
+  const j = await r.json();
+  $('b-list').innerHTML = j.items.length ? '<table><tr><th>User</th><th>Reason</th><th>Servers</th><th>Mod</th><th>Date</th><th>Status</th><th></th></tr>' + j.items.map((b) => '<tr><td>' + esc(b.user_id) + '</td><td>' + esc(b.reason) + '</td><td>' + esc(b.servers_json) + '</td><td>' + esc(b.mod_id) + '</td><td class="dim">' + esc((b.created_at||'').slice(0,10)) + '</td><td>' + (b.is_active ? '<span class="ok">active</span>' : '<span class="dim">inactive</span>') + '</td><td>' + (b.is_active ? '<button class="btn ghost" data-unban="' + b.id + '">Unban</button>' : '') + '</td></tr>').join('') + '</table>' : '<div class="empty">No bans yet.</div>';
+  document.querySelectorAll('[data-unban]').forEach((x) => x.onclick = async () => { await api('/api/bans/' + x.dataset.unban + '/unban', { method: 'POST' }); loadBans(); });
+}
+$('b-create').onclick = async () => {
+  const user = $('b-user').value.trim(), reason = $('b-reason').value.trim(), mins = $('b-mins').value;
+  if (!user || !reason || selB.size === 0) return alert('User, reason, and at least one server required');
+  const r = await api('/api/bans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: user, reason, servers: [...selB], duration_minutes: mins ? Number(mins) : undefined }) });
+  alert(JSON.stringify(await r.json()));
+  loadBans();
+};
+loadBans();
+
+// Timeouts
+async function loadTimeouts() {
+  const r = await api('/api/timeouts?active=1'); if (!r.ok) return;
+  const j = await r.json();
+  $('t-list').innerHTML = j.items.length ? '<table><tr><th>User</th><th>Server</th><th>Reason</th><th>Expires</th><th></th></tr>' + j.items.map((t) => '<tr><td>' + esc(t.user_id) + '</td><td>' + esc(t.server_id) + '</td><td>' + esc(t.reason) + '</td><td class="dim">' + esc(t.expires_at || '') + '</td><td><button class="btn ghost" data-trem="' + t.id + '">Remove</button></td></tr>').join('') + '</table>' : '<div class="empty">No active timeouts.</div>';
+  document.querySelectorAll('[data-trem]').forEach((x) => x.onclick = async () => { await api('/api/timeouts/' + x.dataset.trem + '/remove', { method: 'POST' }); loadTimeouts(); });
+}
+$('t-create').onclick = async () => {
+  const body = { user_id: $('t-user').value.trim(), server: $('t-server').value, duration_minutes: Number($('t-mins').value) || 60, reason: $('t-reason').value.trim() };
+  if (!body.user_id || !body.reason) return alert('User and reason required');
+  const r = await api('/api/timeouts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  alert(JSON.stringify(await r.json())); loadTimeouts();
+};
+loadTimeouts();
+
+// Infractions
+async function loadInfractions() {
+  const user = $('i-user').value.trim();
+  if (!user) return $('i-list').innerHTML = '<div class="empty">Enter a user id.</div>';
+  const r = await api('/api/infractions/' + encodeURIComponent(user) + '/timeline'); if (!r.ok) return;
+  const j = await r.json();
+  $('i-list').innerHTML = j.timeline.length ? '<table><tr><th>Kind</th><th>Date</th><th>Detail</th></tr>' + j.timeline.map((t) => '<tr><td><span class="badge">' + esc(t.kind) + '</span></td><td class="dim">' + esc((t.created_at||'').slice(0,16)) + '</td><td>' + esc(t.reason || t.status || t.user_id) + '</td></tr>').join('') + '</table>' : '<div class="empty">No history for that user.</div>';
+}
+$('i-add').onclick = async () => {
+  const body = { user_id: $('i-user').value.trim(), type: $('i-type').value, reason: $('i-reason').value.trim() };
+  if (!body.user_id || !body.reason) return alert('User and reason required');
+  const r = await api('/api/infractions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  alert(JSON.stringify(await r.json())); loadInfractions();
+};
+$('i-load').onclick = loadInfractions;
+
+// Appeals
+async function loadAppeals() {
+  const r = await api('/api/appeals?status=' + $('a-status').value); if (!r.ok) return;
+  const j = await r.json();
+  $('a-list').innerHTML = j.items.length ? '<table><tr><th>Ban</th><th>User</th><th>Status</th><th>Date</th><th></th></tr>' + j.items.map((a) => '<tr><td>' + esc(a.ban_id.slice(0,8)) + '</td><td>' + esc(a.user_id) + '</td><td>' + esc(a.status) + '</td><td class="dim">' + esc((a.created_at||'').slice(0,10)) + '</td><td>' + (a.status === 'open' ? '<button class="btn ghost" data-app="' + a.id + '" data-v="approved">Approve</button> <button class="btn ghost" data-app="' + a.id + '" data-v="denied">Deny</button>' : '') + '</td></tr>').join('') + '</table>' : '<div class="empty">No appeals.</div>';
+  document.querySelectorAll('[data-app]').forEach((x) => x.onclick = async () => { await api('/api/appeals/' + x.dataset.app + '/' + x.dataset.v, { method: 'POST' }); loadAppeals(); });
+}
+$('a-load').onclick = loadAppeals;
+loadAppeals();
+</script>
+</body>
+</html>

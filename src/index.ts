@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { pollDiscord, backfillDiscordThreads, setThreadState } from './poll';
+import modTools, { expireTimeouts } from './modtools';
 import { verifyAccessJwt } from './access';
 import {
   discordLoginUrl,
@@ -43,6 +44,9 @@ type Bindings = {
   DISCORD_BOT_TOKEN?: string;
   FEED_MAP?: string;
   POLL_DEBUG?: string;
+  MOD_TOOL_SERVERS?: string;
+  DISCOURSE_BASE_URL?: string;
+  DISCOURSE_ADMIN_KEY?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -1102,6 +1106,9 @@ app.delete('/api/servers/:id/token', async (c) => {
   }
 });
 
+// Mod tools: Ban Sync, Timeouts, Infractions, Appeals, Notes (/api/* + /hooks/appeal).
+app.route('/', modTools);
+
 // Fallback: serve static assets (Tools hub + Mail UI). API/hooks above take precedence.
 app.all('*', async (c) => {
   return c.env.ASSETS.fetch(c.req.raw);
@@ -1140,6 +1147,8 @@ export default {
         (level, msg, extra) => jsonLog(level, msg, extra),
       );
       if ((r.mailed ?? 0) > 0 || r.skipped !== 'no-bot-token') jsonLog('info', 'discord poll', r);
+      const expired = await expireTimeouts(env.DB);
+      if (expired > 0) jsonLog('info', 'timeouts expired', { expired });
     } catch (err) {
       jsonLog('error', 'discord poll failed', { error: String(err) });
     }
