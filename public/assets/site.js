@@ -48,7 +48,12 @@
     var logo = h.logo || '/assets/powercordkit_logo.png';
     var home = h.home || '/';
     var links = (Array.isArray(h.links) ? h.links : []).filter(function (l) {
-      if (feats.mailSetup === false && /mail-setup/.test(String(l.href))) return false;
+      var off = ['/mail-setup/', '/mail/', '/modtools/', '/ideas/', '/roadmap/'];
+      if (feats.mailSetup === false && String(l.href).indexOf('/mail-setup/') === 0) return false;
+      if (feats.inbox === false && String(l.href).indexOf('/mail/') === 0) return false;
+      if (feats.modtools === false && String(l.href).indexOf('/modtools/') === 0) return false;
+      if (feats.ideas === false && String(l.href).indexOf('/ideas/') === 0) return false;
+      if (feats.roadmap === false && String(l.href).indexOf('/roadmap/') === 0) return false;
       if (window.__pckRoadmapPrivate && /roadmap/.test(String(l.href))) return false;
       return true;
     });
@@ -90,10 +95,12 @@
       var gh = cfg.githubUrl ? ' · <a href="' + esc(cfg.githubUrl) + '" target="_blank" rel="noopener">GitHub</a>' : '';
       foot.innerHTML = '<a href="' + esc(credit) + '" target="_blank" rel="noopener"><img src="' + esc(logo) + '" alt="" />' + esc(cfg.footerNote || 'Powered by PowerCordKit') + '</a>' + gh;
     }
-    if (feats.mailSetup === false) {
-      var hidden = document.querySelectorAll('[data-pck-feature="mailSetup"]');
-      for (var i = 0; i < hidden.length; i++) hidden[i].style.display = 'none';
-    }
+    Object.keys(feats).forEach(function (k) {
+      if (feats[k] === false) {
+        var els = document.querySelectorAll('[data-pck-feature="' + k + '"]');
+        for (var i = 0; i < els.length; i++) els[i].style.display = 'none';
+      }
+    });
     // Optional marketing hero — only rendered when the active environment
     // provides one (e.g. environments.personal.hero). Other deploys stay plain.
     var hero = document.getElementById('pck-hero');

@@ -6,7 +6,10 @@
   "baseUrl": "/",
   "configUrl": "",
   "features": {
-    "mailSetup": false
+    "mailSetup": false,
+    "tools": true,
+    "inbox": true,
+    "modtools": true
   },
   "environments": {
     "personal": {
@@ -24,12 +27,12 @@
         ]
       },
       "hero": {
-        "kicker": "Discord mod toolsuite",
+        "kicker": "Open source · MIT",
         "title": "Every server, every forum. One inbox.",
-        "subtitle": "PowerCordKit triages ideas, support threads and tickets from all your Discord servers plus your forums into a single mod inbox — with a lab for every Discord power task around it.",
+        "subtitle": "PowerCordKit is an open-source Discord mod suite: a unified community inbox, quiet moderation tools, and a lab for every Discord task. Clone it, skin it, self-host it — your data stays yours.",
         "cta": [
-          { "label": "Open Mail", "href": "/mail/", "primary": true },
-          { "label": "Browse tools", "href": "#tools", "primary": false }
+          { "label": "Get started", "href": "/mail-setup/", "primary": true },
+          { "label": "Star on GitHub", "href": "https://github.com/EmjayBot/powercordkit", "primary": false }
         ]
       }
     }
