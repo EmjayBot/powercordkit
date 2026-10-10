@@ -101,6 +101,13 @@
         for (var i = 0; i < els.length; i++) els[i].style.display = 'none';
       }
     });
+    // Environment-gated sections: only shown on the matching deployment (e.g. personal).
+    if (window.__pckEnv) {
+      var envs = document.querySelectorAll('[data-pck-env]');
+      for (var i = 0; i < envs.length; i++) {
+        if (envs[i].getAttribute('data-pck-env') !== window.__pckEnv) envs[i].style.display = 'none';
+      }
+    }
     // Optional marketing hero — only rendered when the active environment
     // provides one (e.g. environments.personal.hero). Other deploys stay plain.
     var hero = document.getElementById('pck-hero');
@@ -157,6 +164,7 @@
         .catch(function () { return null; })
         .then(function (h) {
           var env = h && h.env;
+          window.__pckEnv = env || null;
           window.__pckRoadmapPrivate = !!(h && h.roadmapPublic === false);
           var envCfg = env && cfg.environments && cfg.environments[env];
           if (envCfg && typeof envCfg === 'object') {

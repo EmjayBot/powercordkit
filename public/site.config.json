@@ -20,7 +20,7 @@
         "links": [
           { "label": "Tools", "href": "/" },
           { "label": "Mail", "href": "/mail/" },
-          { "label": "Mod Tools", "href": "/modtools/" },
+          { "label": "Command", "href": "/modtools/" },
           { "label": "Ideas", "href": "/ideas/" },
           { "label": "Roadmap", "href": "/roadmap/" },
           { "label": "GitHub", "href": "https://github.com/EmjayBot/powercordkit" }
