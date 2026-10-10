@@ -41,16 +41,16 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
     <div class="card"><h3>Target</h3>
       <label>Webhook URL</label><input class="inp" id="w-url" placeholder="https://discord.com/api/webhooks/…/…" spellcheck="false" style="font-family:'JetBrains Mono',monospace;font-size:11px" />
       <div class="hint" id="url-check" style="margin-top:6px"></div>
-      <div class="row"><div><label>Username override</label><input class="inp" id="w-name" value="PowerCordKit" maxlength="80" /></div><div><label>Avatar URL (optional)</label><input class="inp" id="w-avatar" placeholder="https://…" /></div></div>
+      <div class="row"><div><label>Username override</label><input class="inp" id="w-name" value="ModBot" maxlength="80" /></div><div><label>Avatar URL (optional)</label><input class="inp" id="w-avatar" placeholder="https://…" /></div></div>
     </div>
     <div class="card"><h3>Message</h3>
-      <label>Content (up to 2000 chars)</label><textarea class="inp" id="w-content">Hello from **PowerCordKit** Webhook 🎉</textarea>
+      <label>Content (up to 2000 chars)</label><textarea class="inp" id="w-content">Hello from **ModBot** Webhook 🎉</textarea>
       <div class="row"><div><label>Embed title (optional)</label><input class="inp" id="w-et" placeholder="Embed title" /></div><div><label>Embed color</label><input class="inp" id="w-ec" value="#5865F2" /></div></div>
       <label>Embed description (optional)</label><textarea class="inp" id="w-ed" style="min-height:48px" placeholder="Embed body…"></textarea>
     </div>
   </div>
   <div>
-    <div class="card"><h3>Preview</h3><div class="dmsg"><span class="u" id="pv-name">PowerCordKit</span><span class="bot">BOT</span><div id="pv-content" style="margin-top:2px"></div><div class="emb" id="pv-emb" style="display:none"><div class="et" id="pv-et"></div><div class="ed" id="pv-ed"></div></div></div></div>
+    <div class="card"><h3>Preview</h3><div class="dmsg"><span class="u" id="pv-name">ModBot</span><span class="bot">BOT</span><div id="pv-content" style="margin-top:2px"></div><div class="emb" id="pv-emb" style="display:none"><div class="et" id="pv-et"></div><div class="ed" id="pv-ed"></div></div></div></div>
     <div class="card"><h3>Payload</h3><pre class="out" id="out"></pre>
       <div class="btnrow"><button class="btn" id="send">Send via Discord</button><button class="btn ghost" id="curl">Copy curl</button><button class="btn ghost" id="mail">📬 Mail for review</button></div>
       <div class="log" id="log"></div>

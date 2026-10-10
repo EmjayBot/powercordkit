@@ -80,7 +80,7 @@ textarea{background:var(--p2);border:1px solid var(--bd);border-radius:8px;paddi
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-const DEFAULT_MD = '**Bold** *italic* ***bold italic*** __underline__ __**underline bold**__ ~~strike~~ ||spoiler||\n`inline code`\n\n```js\nconsole.log("PowerCordKit")\n```\n\n```ansi\n\x1B[0;31mRed \x1B[0;32mGreen \x1B[0;34mBlue \x1B[0;33mYellow \x1B[1;37mBold White\x1B[0m\n```\n\n> A wise mod once said…\n>>> Everything below is quoted,\neven without markers.\n-# Small gray subtext line\n- List item one\n- List item two\n1. Ordered step one\n2. Ordered step two\n# Big heading\n[Example](https://example.com) <https://example.com> https://example.com\n<@123456789> <@&987654321> <#112233445> @everyone\n<t:1700000000:R>';
+const DEFAULT_MD = '**Bold** *italic* ***bold italic*** __underline__ __**underline bold**__ ~~strike~~ ||spoiler||\n`inline code`\n\n```js\nconsole.log("hello")\n```\n\n```ansi\n\x1B[0;31mRed \x1B[0;32mGreen \x1B[0;34mBlue \x1B[0;33mYellow \x1B[1;37mBold White\x1B[0m\n```\n\n> A wise mod once said…\n>>> Everything below is quoted,\neven without markers.\n-# Small gray subtext line\n- List item one\n- List item two\n1. Ordered step one\n2. Ordered step two\n# Big heading\n[Example](https://example.com) <https://example.com> https://example.com\n<@123456789> <@&987654321> <#112233445> @everyone\n<t:1700000000:R>';
 if(!$('src').value) $('src').value = DEFAULT_MD;
 function render(){
   let lines = $('src').value.split('\n');

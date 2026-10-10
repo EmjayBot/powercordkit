@@ -49,6 +49,7 @@
     var home = h.home || '/';
     var links = (Array.isArray(h.links) ? h.links : []).filter(function (l) {
       if (feats.mailSetup === false && /mail-setup/.test(String(l.href))) return false;
+      if (window.__pckRoadmapPrivate && /roadmap/.test(String(l.href))) return false;
       return true;
     });
     var nav = document.getElementById('pck-nav');
@@ -149,6 +150,7 @@
         .catch(function () { return null; })
         .then(function (h) {
           var env = h && h.env;
+          window.__pckRoadmapPrivate = !!(h && h.roadmapPublic === false);
           var envCfg = env && cfg.environments && cfg.environments[env];
           if (envCfg && typeof envCfg === 'object') {
             var baseHeader = cfg.header || {};

@@ -338,6 +338,7 @@ type InboxRow = {
   url: string;
   assigned: string | null;
   archived: number;
+  completed: number;
   roadmap: number;
   roadmap_status: string;
   roadmap_date: string;
@@ -377,6 +378,7 @@ async function insertInboxItem(db: D1Database, input: InboxInput, fallbackServer
     url: (input.url ?? '#').slice(0, 500),
     assigned: null,
     archived: 0,
+    completed: 0,
     roadmap: 0,
     roadmap_status: '',
     roadmap_date: '',
@@ -423,6 +425,7 @@ app.get('/api/health', (c) => {
     env: c.env.ENVIRONMENT ?? 'personal',
     personalDomain: c.env.PERSONAL_DOMAIN ?? 'powercordkit.emjay.fyi',
     communityDomain: c.env.COMMUNITY_DOMAIN ?? 'mail.example.com',
+    roadmapPublic: roadmapIsPublic(c.env),
     time: new Date().toISOString(),
   });
 });
@@ -493,7 +496,7 @@ app.get('/api/inbox', async (c) => {
     const binds: unknown[] = [];
     if (status === 'completed') {
       where.push('archived = 1');
-      where.push("tag = 'Completed'");
+      where.push('completed = 1');
     } else if (!includeArchived) {
       where.push('archived = 0');
     }
@@ -566,6 +569,7 @@ app.post('/api/inbox', async (c) => {
       url: (body.url ?? '#').slice(0, 500),
       assigned: null,
       archived: 0,
+      completed: 0,
       roadmap: 0,
       roadmap_status: '',
       roadmap_date: '',
@@ -659,13 +663,14 @@ app.post('/api/inbox/:id/archive', async (c) => {
   }
 });
 
-// Mark complete: tag it "Completed" and take it off the dashboard (archived).
+// Mark complete: set completed and take it off the dashboard (archived).
 // Also applies the matching forum tag on the Discord thread, if any.
+// The inbox tag is preserved so Reopen restores it exactly.
 app.post('/api/inbox/:id/complete', async (c) => {
   try {
     const id = c.req.param('id');
     const r = await c.env.DB.prepare(
-      `UPDATE inbox_items SET archived = 1, tag = 'Completed' WHERE id = ?`,
+      `UPDATE inbox_items SET archived = 1, completed = 1 WHERE id = ?`,
     ).bind(id).run();
     if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
       return bad('item not found', 404);
@@ -683,7 +688,7 @@ app.post('/api/inbox/:id/reopen', async (c) => {
   try {
     const id = c.req.param('id');
     const r = await c.env.DB.prepare(
-      `UPDATE inbox_items SET archived = 0, tag = type WHERE id = ?`,
+      `UPDATE inbox_items SET archived = 0, completed = 0 WHERE id = ?`,
     ).bind(id).run();
     if (Number((r as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0) === 0) {
       return bad('item not found', 404);
@@ -705,7 +710,7 @@ app.post('/api/admin/resync-completed', async (c) => {
     const offset = Math.max(Number(c.req.query('offset') ?? '0') || 0, 0);
     const rows = await c.env.DB.prepare(
       `SELECT id, url FROM inbox_items
-       WHERE archived = 1 AND tag = 'Completed' AND src = 'discord'
+       WHERE archived = 1 AND completed = 1 AND src = 'discord'
        ORDER BY id LIMIT ? OFFSET ?`,
     ).bind(limit, offset).all<{ id: string; url: string }>();
     let synced = 0;
@@ -907,6 +912,7 @@ app.post('/hooks/discourse', async (c) => {
       url: '#',
       assigned: null,
       archived: 0,
+      completed: 0,
       roadmap: 0,
       roadmap_status: '',
       roadmap_date: '',
@@ -954,6 +960,7 @@ app.post('/hooks/discord', async (c) => {
       url: (body.url ?? '#').slice(0, 500),
       assigned: null,
       archived: 0,
+      completed: 0,
       roadmap: 0,
       roadmap_status: '',
       roadmap_date: '',

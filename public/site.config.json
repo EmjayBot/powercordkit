@@ -39,7 +39,7 @@
     "home": "/",
     "links": [
       { "label": "Tools", "href": "/" },
-      { "label": "Mail", "href": "/mail/" },
+      { "label": "Community Inbox", "href": "/mail/" },
       { "label": "Ideas", "href": "/ideas/" },
       { "label": "Roadmap", "href": "/roadmap/" },
       { "label": "Home", "href": "https://tep.one" },
