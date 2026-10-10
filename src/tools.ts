@@ -1,4 +1,4 @@
-// Tools-only site worker (community): serves prebuilt static labs from
+// Tools-only site worker (community): serves prebuilt static tools from
 // dist/tools (see `npm run build:tools`). No D1, no secrets, no API —
 // Mail lives on powercordkit-community. Custom domain via routes below.
 export default {

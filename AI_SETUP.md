@@ -24,7 +24,7 @@ Goal: help a user **self-host the Mail inbox** end to end.
 | `src/discord-oauth.ts` | Discord login + signed session cookies |
 | `src/ed25519.ts` | Verifies Discord interaction signatures |
 | `src/access.ts` | Optional Cloudflare Access JWT verification |
-| `public/` | Static UI (hub, mail, ideas, roadmap, mail-setup, labs) |
+| `public/` | Static UI (hub, mail, ideas, roadmap, mail-setup, tools) |
 | `public/site.config.json` + `public/assets/site.js` | Header/links/accent/footer shell |
 | `migrations/*.sql` | D1 schema |
 | `scripts/build-tools.mjs` | Builds the backend-free tools site |

@@ -1,5 +1,5 @@
 {
-  // TOOLS-ONLY SITE — serves the built static labs. No D1, no secrets.
+  // TOOLS-ONLY SITE — serves the built static tools. No D1, no secrets.
   // Build + deploy: npm run deploy:tools  (after `wrangler login`).
   // Keep your own values in wrangler.tools.local.jsonc (gitignored).
   "$schema": "./node_modules/wrangler/config-schema.json",

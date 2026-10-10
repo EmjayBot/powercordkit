@@ -38,7 +38,7 @@ td{padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
 <div id="pck-nav"></div>
 <div class="wrap">
   <h1>Self-host the Mail inbox</h1>
-  <p class="lead">The labs run anywhere static. The <b>Mail inbox</b> (unified triage, tickets, ideas, roadmap, webhooks) needs one Cloudflare Worker + one D1 database per community. This guide takes you from zero to a live inbox in ~20 minutes. Free-tier friendly.</p>
+  <p class="lead">The tools run anywhere static. The <b>Mail inbox</b> (unified triage, tickets, ideas, roadmap, webhooks) needs one Cloudflare Worker + one D1 database per community. This guide takes you from zero to a live inbox in ~20 minutes. Free-tier friendly.</p>
   <div class="note">🤖 <b>Setting up with an AI assistant?</b> Give it a machine-readable version of these instructions: <a href="/ai-setup.md"><code>/ai-setup.md</code></a>. Prompt: <i>“Read /ai-setup.md and help me self-host the Mail inbox; ask me for every input first and keep secrets out of the chat.”</i></div>
 
   <div class="toc"><b>Steps</b>
@@ -46,7 +46,7 @@ td{padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
   </div>
 
   <h2 id="s0"><span class="n">0</span>What you get</h2>
-  <p>One deployment serves the <b>tools hub + all labs + the Mail UI</b>. The inbox API (<code>/api/*</code>) and webhooks (<code>/hooks/*</code>) run in the same Worker, backed by D1. Two communities = two deployments (e.g. <code>tools.example.com</code> + <code>mod.example.org</code>), each with its own Worker, D1 and secrets — same codebase, two configs (<code>wrangler.jsonc</code> + <code>wrangler.community.jsonc</code>).</p>
+  <p>One deployment serves the <b>tools hub + all tools + the Mail UI</b>. The inbox API (<code>/api/*</code>) and webhooks (<code>/hooks/*</code>) run in the same Worker, backed by D1. Two communities = two deployments (e.g. <code>tools.example.com</code> + <code>mod.example.org</code>), each with its own Worker, D1 and secrets — same codebase, two configs (<code>wrangler.jsonc</code> + <code>wrangler.community.jsonc</code>).</p>
   <p>Branding, header and links are configurable in <code>public/site.config.json</code> (no rebuild needed — the shell script <code>public/assets/site.js</code> renders them from that file, or from a remote <code>configUrl</code>). The <code>Powered by PowerCordKit</code> footer credit must stay (LICENSE.md).</p>
 
   <h2 id="s1"><span class="n">1</span>Prerequisites</h2>
@@ -211,7 +211,7 @@ client.login(process.env.DISCORD_BOT_TOKEN);</pre>
   <p>Cost: comfortably inside Cloudflare's free tier for community-sized Discords (Workers + D1 + tiny static assets).</p>
 
   <h2 id="tools-only"><span class="n">★</span>Just want the tools? Self-host the toolset</h2>
-  <p>The labs (Embed, Color, Markdown, Timestamp, Snowflake, Webhook, Slowmode) are backend-free. Anyone can run their own copy — on this site, or theirs:</p>
+  <p>The tools (Embed, Color, Markdown, Timestamp, Snowflake, Webhook, Slowmode) are backend-free. Anyone can run their own copy — on this site, or theirs:</p>
   <ul><li><b>Use them here</b> — every tool on this site is free to use as-is.</li><li><b>Embed a tool</b> — paste this where you want it (replace the host):<br/><code>&lt;iframe src="https://&lt;host&gt;/embeds/" width="100%" height="700" style="border:0;border-radius:12px" title="Embed"&gt;&lt;/iframe&gt;</code></li><li><b>Host your own toolset</b> — from the repo:<pre><button class="copy">Copy</button>npm run build:tools       # → dist/tools/ (labs + this guide, no Mail backend)
 npm run deploy:tools      # Cloudflare Worker, then attach your domain</pre></li></ul>
   <p>Customize the header, links and accent in <code>public/site.config.json</code>. You can turn the setup guide link off with <code>"features": { "mailSetup": false }</code>.</p>

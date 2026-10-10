@@ -2,7 +2,7 @@
 
 Discord mod tools suite + Unified Mod Inbox.
 
-- **Tools** — self-contained labs (Embed, Color, Markdown, Timestamp, Snowflake, Webhook, Slowmode) that run anywhere static.
+- **Tools** — self-contained tools (Embed, Color, Markdown, Timestamp, Snowflake, Webhook, Slowmode) that run anywhere static.
 - **Mail** — a unified mod inbox for Discord servers + forums: tickets, support threads, ideas, a roadmap, Discord login, and webhooks, on Cloudflare Workers + D1.
 
 Stack: Cloudflare **Workers** (Hono) + Static Assets (`./public`) + **D1** (`migrations/`).
@@ -27,16 +27,16 @@ The committed configs are generic placeholders (no account IDs, no domains, `REP
 |------|-------|---------|
 | Mod Mail — Overview | `/mail/` | D1 (`/api/inbox` stats + queues) |
 | Mod Mail — Unified Inbox | `/mail/inbox/` | D1 (`/api/inbox`, `/hooks/*`) |
-| Color Lab | `/color/` | Static only (clipboard) |
-| Embed Lab | `/embeds/` | Static + optional POST to Mail |
+| Color | `/color/` | Static only (clipboard) |
+| Embed | `/embeds/` | Static + optional POST to Mail |
 | Slowmode Planner | `/slowmode/` | Static + optional POST to Mail |
 | Ticket Triage | `/tickets/` | D1 via Mail API (`type=ticket`) |
 | Idea Capture | `/ideas/` | D1 via Mail API (`type=idea`) |
 | Roadmap | `/roadmap/` | D1 via Mail API (`/api/roadmap`) |
-| Timestamp Lab | `/timestamp/` | Static only (clipboard) |
-| Snowflake Lab | `/snowflake/` | Static only |
-| Markdown Lab | `/markdown/` | Static only (clipboard) |
-| Webhook Lab | `/webhook/` | Direct browser POST to Discord |
+| Timestamp | `/timestamp/` | Static only (clipboard) |
+| Snowflake | `/snowflake/` | Static only |
+| Markdown | `/markdown/` | Static only (clipboard) |
+| Webhook | `/webhook/` | Direct browser POST to Discord |
 
 ## Quick start (local)
 
@@ -75,7 +75,7 @@ Full, accurate steps (Discord app, login, poller, "Save as Idea", webhooks, road
 
 ## Deploy the tools-only site
 
-Anyone can run the labs without the Mail backend:
+Anyone can run the tools without the Mail backend:
 
 ```powershell
 npm run build:tools        # → dist/tools/ (gitignored)
@@ -102,7 +102,7 @@ node scripts/build-tools.mjs --config tools.my.json --out dist/tools
 - Discourse: `POST /hooks/discourse`, secret = `DISCOURSE_WEBHOOK_SECRET` (`X-Discourse-Event-Signature`).
 - Other forums: `POST /hooks/:name` for `nodebb`, `flarum`, `lemmy`, `custom` (header `X-Forum-Secret`). Extend `FORUM_ADAPTERS` in `src/index.ts` to add one.
 
-## GitHub Pages (static labs)
+## GitHub Pages (static tools)
 
 Everything in `./public` except Mail's `/api` + `/hooks` is static and runs on GitHub Pages (`.nojekyll` + `404.html` included). Mail pages load but show their offline state (no D1). Requires root hosting (custom domain or a user site) — project subpaths aren't supported.
 

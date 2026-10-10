@@ -27,7 +27,7 @@
         "subtitle": "PowerCordKit triages ideas, support threads and tickets from all your Discord servers plus your forums into a single mod inbox — with a lab for every Discord power task around it.",
         "cta": [
           { "label": "Open Mail", "href": "/mail/", "primary": true },
-          { "label": "Browse tools", "href": "#labs", "primary": false }
+          { "label": "Browse tools", "href": "#tools", "primary": false }
         ]
       }
     }
