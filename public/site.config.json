@@ -6,11 +6,12 @@
   "baseUrl": "/",
   "configUrl": "",
   "features": {
-    "mailSetup": true
+    "mailSetup": false
   },
   "environments": {
     "personal": {
       "siteName": "PowerCordKit",
+      "features": { "mailSetup": true },
       "header": {
         "brand": "PowerCordKit",
         "links": [
@@ -41,7 +42,9 @@
       { "label": "Mail", "href": "/mail/" },
       { "label": "Ideas", "href": "/ideas/" },
       { "label": "Roadmap", "href": "/roadmap/" },
-      { "label": "Setup", "href": "/mail-setup/" }
+      { "label": "Home", "href": "https://tep.one" },
+      { "label": "Forum", "href": "https://forum.theeastpacific.com" },
+      { "label": "Discord", "href": "https://discord.gg/the-east-pacific-633351482128728064" }
     ]
   },
   "footerNote": "Powered by PowerCordKit",

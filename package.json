@@ -20,7 +20,7 @@
     "db:migrate:remote:community:local": "wrangler d1 migrations apply powercordkit-mail-community --remote --config wrangler.community.local.jsonc",
     "db:migrate:remote:local": "wrangler d1 migrations apply powercordkit-mail --remote --config wrangler.local.jsonc",
     "secret:bot-token": "wrangler secret put DISCORD_BOT_TOKEN --config wrangler.community.jsonc",
-    "build:tools": "node scripts/build-tools.mjs",
+    "build:tools": "node scripts/build-tools.mjs --config tools.config.json",
     "preview:tools": "wrangler pages dev dist/tools --port 8792",
     "deploy:tools": "npm run build:tools && wrangler deploy --config wrangler.tools.jsonc",
     "dev:local": "wrangler dev --config wrangler.local.jsonc",

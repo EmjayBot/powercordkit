@@ -33,7 +33,7 @@
 .mob-only{display:none!important}
 @media(max-width:820px){
   .side{position:fixed;left:0;top:0;bottom:0;z-index:70;width:270px;max-width:82vw;transform:translateX(-100%);transition:transform .18s ease;border-right:1px solid var(--bd)}
-  .side.open{transform:translateX(0);box-shadow:0 0 0 100vmax rgba(0,0,0,.55)}
+  .side.open{transform:translateX(0)}
   .list{width:100%;border-right:0}
   .detail{position:fixed;inset:0;z-index:65;transform:translateX(100%);transition:transform .18s ease}
   .detail.open{transform:translateX(0)}
@@ -44,17 +44,21 @@
   .card{width:auto;max-width:92vw}
   .modal .card{width:92vw}
 }
+.side-scrim{position:fixed;inset:0;z-index:66;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .18s ease}
+.side-scrim.open{opacity:1;pointer-events:auto}
 </style>
 </head>
 <body>
 <div id="pck-nav"></div>
 <div class="main">
   <div class="side">
+    <div class="mob-only" style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:13px">Filters</b><button class="abtn" id="filters-close">✕ Close</button></div>
     <div><h4>Servers</h4><div id="srv-filters"><div class="srv active" data-server="all"><span>All Servers</span><span id="c-all">–</span></div></div></div>
     <div><h4>Type</h4><div id="type-filters"><div class="srv active" data-type="all"><span>All types</span></div></div></div>
     <div><h4>View</h4><div id="view-filters"><div class="srv active" data-status="open"><span>Open</span></div><div class="srv" data-status="completed"><span>Completed</span></div></div></div>
     <div style="margin-top:auto"><div style="font-size:10px;color:var(--m);line-height:1.6" id="hook-hint">Discourse webhook:<br/>POST /hooks/discourse</div><div style="font-size:10px;margin-top:10px"><a href="https://powercordkit.emjay.fyi" target="_blank" rel="noopener" style="color:var(--m);text-decoration:none">Powered by PowerCordKit</a></div></div>
   </div>
+  <div class="mob-only side-scrim" id="side-scrim"></div>
   <div class="list">
     <div class="list-top"><button class="btn mob-only" id="filters-btn" style="flex:0 0 auto">☰</button><input class="search" id="q" placeholder="Search ideas, bugs, tickets…" /><button class="btn" id="new-btn">+ New</button></div>
     <div class="status" id="status">Connecting to API…</div>
@@ -311,8 +315,13 @@ function closeM() { $('modal').classList.remove('open'); }
 $('new-btn').onclick = openM; $('cancel-btn').onclick = closeM; $('send-btn').onclick = addItem;
 $('q').addEventListener('input', () => load());
 const sideEl = document.querySelector('.side');
+const sideScrim = $('side-scrim');
+function closeDrawer() { sideEl.classList.remove('open'); if (sideScrim) sideScrim.classList.remove('open'); }
 const fbtn = $('filters-btn');
-if (fbtn) fbtn.onclick = () => sideEl.classList.toggle('open');
+if (fbtn) fbtn.onclick = () => { sideEl.classList.toggle('open'); if (sideScrim) sideScrim.classList.toggle('open'); };
+const fclose = $('filters-close');
+if (fclose) fclose.onclick = closeDrawer;
+if (sideScrim) sideScrim.onclick = closeDrawer;
 sideEl.addEventListener('click', (e) => {
   const el = e.target.closest ? e.target.closest('[data-server],[data-type],[data-status]') : null;
   if (!el) return;
@@ -320,7 +329,7 @@ sideEl.addEventListener('click', (e) => {
   if (srv !== undefined) { document.querySelectorAll('[data-server]').forEach((x) => x.classList.remove('active')); el.classList.add('active'); fS = srv; }
   if (typ !== undefined) { document.querySelectorAll('[data-type]').forEach((x) => x.classList.remove('active')); el.classList.add('active'); fT = typ; }
   if (st !== undefined) { document.querySelectorAll('[data-status]').forEach((x) => x.classList.remove('active')); el.classList.add('active'); fStatus = st; sel = null; }
-  sideEl.classList.remove('open');
+  closeDrawer();
   load();
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E') { if (sel && document.activeElement.tagName !== 'INPUT') { sel.archived ? reopen(sel.id) : complete(sel.id); } } if (e.key === 'Escape') closeM(); });

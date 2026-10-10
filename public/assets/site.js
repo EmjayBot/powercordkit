@@ -21,6 +21,8 @@
     '.pck-top .pck-auth{display:flex;gap:8px;align-items:center}' +
     '.pck-top .pck-signout{background:#1e1e22;border:1px solid var(--pck-bd,#26262b);color:#c9c9cf;border-radius:8px;padding:6px 11px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;font-family:inherit}' +
     '.pck-top .pck-signout:hover{border-color:var(--pck-b,#5865F2);color:#fff}' +
+    '.pck-top .pck-login{background:var(--pck-b,#5865F2);color:#fff;border:0;border-radius:8px;padding:7px 15px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;font-family:inherit}' +
+    '.pck-top .pck-login:hover{filter:brightness(1.12)}' +
     '.pck-foot{border-top:1px solid var(--pck-bd,#26262b);margin-top:48px;padding:22px 16px;color:#8a8a90;font-size:12px;text-align:center}' +
     '.pck-foot img{width:20px;height:20px;border-radius:5px;vertical-align:-5px;margin-right:7px}' +
     '.pck-foot a{color:#8a8a90;text-decoration:none}.pck-foot a:hover{color:#f0f0f2}' +
@@ -64,15 +66,21 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .catch(function () { return null; })
       .then(function (me) {
+        var auth = document.getElementById('pck-auth');
+        if (!auth) return;
         var hasKey = false;
         try { hasKey = !!sessionStorage.getItem('pck-mod-key'); } catch (e) { /* ignore */ }
-        var auth = document.getElementById('pck-auth');
-        if (!auth || !((me && me.authenticated) || hasKey)) return;
-        var name = me && me.user && me.user.name ? esc(me.user.name) + ' · ' : '';
-        auth.innerHTML = '<a class="pck-signout" href="/api/auth/logout"><span style="opacity:.7">' + name + '</span>Log out</a>';
-        auth.firstChild.addEventListener('click', function () {
-          try { sessionStorage.removeItem('pck-mod-key'); } catch (e) { /* ignore */ }
-        });
+        var authed = !!(me && me.authenticated);
+        if (authed || hasKey) {
+          var nm = me && me.user && me.user.name ? esc(me.user.name) + ' · ' : '';
+          auth.innerHTML = '<a class="pck-signout" href="/api/auth/logout"><span style="opacity:.7">' + nm + '</span>Log out</a>';
+          auth.firstChild.addEventListener('click', function () {
+            try { sessionStorage.removeItem('pck-mod-key'); } catch (e) { /* ignore */ }
+          });
+        } else if (me) {
+          // Backend page with no session — make login one tap away.
+          auth.innerHTML = '<a class="pck-login" href="/api/auth/login">Log in</a>';
+        }
       });
     var foot = document.getElementById('pck-foot');
     if (foot) {
