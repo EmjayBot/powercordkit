@@ -113,6 +113,10 @@ async function api(path, opts) {
 const SERVERS = [];
 const selB = new Set();
 
+const urlParams = new URLSearchParams(location.search);
+const userParam = urlParams.get('user');
+if (userParam) $('i-user').value = userParam;
+
 async function loadServers() {
   const r = await api('/api/modtools/servers');
   if (r.ok) {
