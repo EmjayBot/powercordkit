@@ -40,6 +40,13 @@ async function actingMod(env: Env, headers: Headers): Promise<string> {
   return (sess?.uid as string) || 'mod-key';
 }
 
+// Advertise the configured server slugs so the UI is never hardcoded to one community.
+mod.get('/api/modtools/servers', (c) => {
+  const servers = Object.keys(toolServers(c.env));
+  if (c.env.DISCOURSE_BASE_URL && c.env.DISCOURSE_ADMIN_KEY && !servers.includes('discourse')) servers.push('discourse');
+  return c.json({ ok: true, servers });
+});
+
 function rateLimit(key: string, max: number, windowMs: number): boolean {
   const g = globalThis as any;
   const buckets: Map<string, number[]> = g.__rl ?? new Map<string, number[]>();

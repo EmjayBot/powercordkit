@@ -110,8 +110,20 @@ async function api(path, opts) {
   return r;
 }
 
-const SERVERS = ['tep', 'tep-urth', 'discourse'];
+const SERVERS = [];
 const selB = new Set();
+
+async function loadServers() {
+  const r = await api('/api/modtools/servers');
+  if (r.ok) {
+    const j = await r.json();
+    SERVERS.length = 0;
+    (Array.isArray(j.servers) ? j.servers : []).forEach((s) => SERVERS.push(String(s)));
+  }
+  chips();
+  const disc = SERVERS.filter((s) => s !== 'discourse');
+  $('t-server').innerHTML = disc.length ? disc.map((s) => '<option>' + esc(s) + '</option>').join('') : '<option value="">(no servers)</option>';
+}
 
 // Tabs
 document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
@@ -126,10 +138,6 @@ function chips() {
   $('b-servers').innerHTML = SERVERS.map((s) => '<span class="chip' + (selB.has(s) ? ' sel' : '') + '" data-s="' + s + '">' + s + '</span>').join('') || '';
   document.querySelectorAll('#b-servers .chip').forEach((c) => c.onclick = () => { const s = c.dataset.s; selB.has(s) ? selB.delete(s) : selB.add(s); chips(); });
 }
-chips();
-
-// Timeout server select
-$('t-server').innerHTML = SERVERS.filter((s) => s !== 'discourse').map((s) => '<option>' + s + '</option>').join('');
 
 // Bans
 async function loadBans() {
@@ -143,7 +151,8 @@ $('b-create').onclick = async () => {
   if (!user || !reason || selB.size === 0) return alert('User, reason, and at least one server required');
   const r = await api('/api/bans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: user, reason, servers: [...selB], duration_minutes: mins ? Number(mins) : undefined }) });
   alert(JSON.stringify(await r.json()));
-  loadBans();
+loadServers();
+loadBans();
 };
 loadBans();
 
