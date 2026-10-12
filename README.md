@@ -132,3 +132,5 @@ Everything in `./public` except Mail's `/api` + `/hooks` is static and runs on G
 ## Credit
 
 MIT (`LICENSE.md`). The one condition: keep the **"Powered by PowerCordKit"** footer credit and link-back on any copy, embed, or self-hosted toolset.
+
+Vibe-crafted, human tested.
