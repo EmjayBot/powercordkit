@@ -208,6 +208,19 @@ works across isolates).
   for each server you moderate via Discord.
 - Secrets: if syncing suspends to Discourse, add `DISCOURSE_BASE_URL` and
   `DISCOURSE_ADMIN_KEY` (Admin → API → Create key, `suspend` permission).
+- Identity linking (Discord <-> forum, different usernames OK):
+  `identity_links` table (`migrations/0008_identity_links.sql`). Manual: `/modtools/`
+  Ban pane → Link forum (Discord ID + forum user ID + username). Auto: Discourse
+  webhook with `discord_id` in `user.custom_fields` / `post.custom_fields` upserts a
+  verified link. Ban/suspend/unsuspend resolve the forum ID via the link —
+  unlinked Discourse targets report `no linked discourse account` instead of
+  suspending the wrong user.
+- Cold archive (stay on Workers Free: 100k req/day, D1 5M reads/100k writes/day,
+  5GB total / 500MB per DB): retention cron archives 90d+ inbox items + notes
+  before delete. `ARCHIVE_GITHUB_REPO` (`owner/repo`, private) + `ARCHIVE_GITHUB_TOKEN`
+  = truth (one issue per item, label `mod-archive`); `ARCHIVE_DISCORD_WEBHOOK_URL` =
+  mirror summary. Manual: `POST /api/admin/archive-now`. Without either var,
+  purge just deletes (old behavior).
 
 **Bot permissions** — the bot needs **Ban Members** (bans) and
 **Moderate Members / Manage Members** (timeouts) on every guild in

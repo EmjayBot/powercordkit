@@ -44,6 +44,42 @@ async function actingMod(env: Env, headers: Headers): Promise<string> {
   return (sess?.uid as string) || 'mod-key';
 }
 
+// Identity links: Discord <-> forum accounts with different usernames.
+// discord_id = Discord snowflake, platform = 'discourse' | 'nodebb' | ...,
+// external_id = forum user id (for API suspend), external_username display only.
+export async function upsertIdentityLink(
+  db: D1Database,
+  discordId: string,
+  platform: string,
+  externalId: string,
+  externalUsername: string,
+  verified: number,
+  linkedBy: string | null,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO identity_links (discord_id, platform, external_id, external_username, verified, linked_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(discord_id, platform)
+       DO UPDATE SET external_id = excluded.external_id, external_username = excluded.external_username,
+         verified = MAX(identity_links.verified, excluded.verified), linked_by = excluded.linked_by`,
+    )
+    .bind(discordId, platform, externalId, externalUsername, verified, linkedBy, new Date().toISOString())
+    .run();
+}
+
+async function resolveForumId(db: D1Database, discordId: string, platform: string): Promise<{ id: string; username: string } | null> {
+  try {
+    const row = await db
+      .prepare('SELECT external_id, external_username FROM identity_links WHERE discord_id = ? AND platform = ?')
+      .bind(discordId, platform)
+      .first<{ external_id: string; external_username: string }>();
+    return row ? { id: row.external_id, username: row.external_username } : null;
+  } catch {
+    // Pre-migration: no links table yet.
+    return null;
+  }
+}
+
 // Advertise the configured server slugs so the UI is never hardcoded to one community.
 mod.get('/api/modtools/servers', (c) => {
   const servers = Object.keys(toolServers(c.env));
@@ -106,14 +142,39 @@ async function discordReq(token: string, method: string, path: string, body?: un
   return { ok: r.ok, status: r.status };
 }
 
-async function unsuspendDiscourse(
+async function suspendDiscourse(
+  db: D1Database,
   env: Env,
-  userId: string,
+  discordId: string,
+  opts: { suspend_until: string; reason: string },
 ): Promise<{ ok: boolean; status?: number; error?: string } | null> {
   const base = env.DISCOURSE_BASE_URL?.replace(/\/$/, '');
   if (!base || !env.DISCOURSE_ADMIN_KEY) return null;
+  const link = await resolveForumId(db, discordId, 'discourse');
+  if (!link) return { ok: false, error: 'no linked discourse account' };
   try {
-    const r = await fetch(`${base}/admin/users/${userId}/unsuspend.json`, {
+    const r = await fetch(`${base}/admin/users/${link.id}/suspend.json`, {
+      method: 'POST',
+      headers: { 'Api-Key': env.DISCOURSE_ADMIN_KEY, 'Api-Username': 'system', 'content-type': 'application/json' },
+      body: JSON.stringify({ suspend_until: opts.suspend_until, reason: opts.reason }),
+    });
+    return { ok: r.ok, status: r.status };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+async function unsuspendDiscourse(
+  db: D1Database,
+  env: Env,
+  discordId: string,
+): Promise<{ ok: boolean; status?: number; error?: string } | null> {
+  const base = env.DISCOURSE_BASE_URL?.replace(/\/$/, '');
+  if (!base || !env.DISCOURSE_ADMIN_KEY) return null;
+  const link = await resolveForumId(db, discordId, 'discourse');
+  if (!link) return { ok: false, error: 'no linked discourse account' };
+  try {
+    const r = await fetch(`${base}/admin/users/${link.id}/unsuspend.json`, {
       method: 'POST',
       headers: { 'Api-Key': env.DISCOURSE_ADMIN_KEY, 'Api-Username': 'system' },
     });
@@ -126,6 +187,7 @@ async function unsuspendDiscourse(
 // Unban everywhere a ban row covers (Discord guilds + Discourse).
 // Best-effort: callers still deactivate the row even when a remote fails.
 async function unbanEverywhere(
+  db: D1Database,
   env: Env,
   ban: { user_id: string; servers_json?: string | null },
 ): Promise<Record<string, { ok: boolean; status?: number; error?: string }>> {
@@ -150,7 +212,7 @@ async function unbanEverywhere(
     }
   }
   if (servers.includes('discourse')) {
-    const r = await unsuspendDiscourse(env, ban.user_id);
+    const r = await unsuspendDiscourse(db, env, ban.user_id);
     results.discourse = r ?? { ok: false, error: 'discourse not configured' };
   }
   return results;
@@ -167,7 +229,7 @@ export async function expireBans(db: D1Database, env: Env): Promise<number> {
   const list = rows.results ?? [];
   for (const row of list) {
     try {
-      await unbanEverywhere(env, row);
+      await unbanEverywhere(db, env, row);
     } catch (err) {
       jsonLog('warn', 'expire ban remote failed', { id: row.id, error: String(err) });
     }
@@ -195,24 +257,21 @@ mod.post('/api/bans', async (c) => {
     const map = toolServers(c.env);
     const results: Record<string, { ok: boolean; status?: number; error?: string }> = {};
     for (const slug of servers) {
+      if (slug === 'discourse') continue;
       const g = map[slug];
-      if (!g?.guild) { results[slug] = { ok: false, error: 'unknown server slug' }; continue; }
+      if (!g?.guild) {
+        results[slug] = { ok: false, error: 'unknown server slug' };
+        continue;
+      }
       const r = await discordReq(token, 'PUT', `/guilds/${g.guild}/bans/${uid}`, { reason, delete_message_seconds: Math.min(Math.max(body.delete_days ?? 0, 0), 7) * 86400 });
       results[slug] = { ok: r.ok, status: r.status };
     }
     if (servers.includes('discourse')) {
-      const base = c.env.DISCOURSE_BASE_URL?.replace(/\/$/, '');
-      if (base && c.env.DISCOURSE_ADMIN_KEY) {
-        const r = await fetch(`${base}/admin/users/${uid}/suspend.json`, {
-          method: 'POST',
-          headers: { 'Api-Key': c.env.DISCOURSE_ADMIN_KEY, 'Api-Username': 'system', 'content-type': 'application/json' },
-          body: JSON.stringify({
-            suspend_until: body.duration_minutes ? new Date(Date.now() + body.duration_minutes * 60000).toISOString() : '2038-01-01T00:00:00Z',
-            reason,
-          }),
-        });
-        results.discourse = { ok: r.ok, status: r.status };
-      } else results.discourse = { ok: false, error: 'discourse not configured' };
+      const r = await suspendDiscourse(c.env.DB, c.env, uid, {
+        suspend_until: body.duration_minutes ? new Date(Date.now() + body.duration_minutes * 60000).toISOString() : '2038-01-01T00:00:00Z',
+        reason,
+      });
+      results.discourse = r ?? { ok: false, error: 'discourse not configured' };
     }
     if (!Object.values(results).some((x) => x.ok)) return c.json({ ok: false, results }, 400);
     const id = newId();
@@ -239,7 +298,7 @@ mod.post('/api/bans/:id/unban', async (c) => {
     const row: any = await c.env.DB.prepare('SELECT * FROM bans WHERE id = ?').bind(id).first();
     if (!row) return bad('ban not found', 404);
     if (!row.is_active) return c.json({ ok: true, already: true });
-    const results = await unbanEverywhere(c.env, row);
+    const results = await unbanEverywhere(c.env.DB, c.env, row);
     await c.env.DB.prepare('UPDATE bans SET is_active = 0 WHERE id = ?').bind(id).run();
     await audit(c.env.DB, { action: 'unban', user_id: row.user_id, detail: { servers: JSON.parse(row.servers_json || '[]') } });
     return c.json({ ok: true, results });
@@ -424,7 +483,7 @@ async function decideAppeal(c: any, nextStatus: string, approve: boolean): Promi
       // Trigger the full unban flow for the linked ban (Discord + Discourse).
       const ban: any = await c.env.DB.prepare('SELECT * FROM bans WHERE id = ? AND is_active = 1').bind(row.ban_id).first();
       if (ban) {
-        await unbanEverywhere(c.env, ban);
+        await unbanEverywhere(c.env.DB, c.env, ban);
         await c.env.DB.prepare('UPDATE bans SET is_active = 0 WHERE id = ?').bind(row.ban_id).run();
       }
     }
@@ -475,6 +534,48 @@ mod.get('/api/user-notes/:user', async (c) => {
   if (!/^\d{10,}$/.test(user)) return bad('valid user_id required', 400);
   const res = await c.env.DB.prepare('SELECT * FROM user_notes WHERE user_id = ? ORDER BY created_at DESC LIMIT 200').bind(user).all();
   return c.json({ ok: true, items: res.results ?? [] });
+});
+
+// ------------------------------------------------------------------ Identity links
+// Manual link first (mod UI), auto-verify later via forum webhook/custom field.
+mod.get('/api/links/:discordId', async (c) => {
+  const discordId = c.req.param('discordId');
+  if (!/^\d{10,}$/.test(discordId)) return bad('valid discord id required', 400);
+  try {
+    const res = await c.env.DB.prepare('SELECT * FROM identity_links WHERE discord_id = ?').bind(discordId).all();
+    return c.json({ ok: true, items: res.results ?? [] });
+  } catch {
+    return c.json({ ok: true, items: [] });
+  }
+});
+
+mod.post('/api/links', async (c) => {
+  try {
+    const body = await readJson<{ discord_id?: string; platform?: string; external_id?: string; external_username?: string }>(c);
+    const discordId = (body.discord_id ?? '').trim();
+    const platform = (body.platform ?? 'discourse').trim().slice(0, 32) || 'discourse';
+    const externalId = (body.external_id ?? '').trim().slice(0, 80);
+    if (!/^\d{10,}$/.test(discordId)) return bad('valid discord_id required', 400);
+    if (!externalId) return bad('external_id required', 400);
+    const modId = await actingMod(c.env, c.req.raw.headers);
+    if (!(await checkRateLimit(c.env.DB, 'link:' + modId, 20, 60000)))
+      return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
+    await upsertIdentityLink(c.env.DB, discordId, platform, externalId, (body.external_username ?? '').slice(0, 80), 0, modId);
+    await audit(c.env.DB, { action: 'link_upsert', user_id: discordId, mod_id: modId, detail: { platform, externalId } });
+    const link = await resolveForumId(c.env.DB, discordId, platform);
+    return c.json({ ok: true, link });
+  } catch (err) {
+    jsonLog('error', 'link upsert failed', { error: String(err) });
+    return bad('Failed to save link', 500);
+  }
+});
+
+mod.delete('/api/links/:discordId/:platform', async (c) => {
+  const discordId = c.req.param('discordId');
+  const platform = c.req.param('platform');
+  await c.env.DB.prepare('DELETE FROM identity_links WHERE discord_id = ? AND platform = ?').bind(discordId, platform).run();
+  await audit(c.env.DB, { action: 'link_delete', user_id: discordId, detail: { platform } });
+  return c.json({ ok: true });
 });
 
 export default mod;

@@ -55,6 +55,14 @@ td{padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
       <div class="chips" id="b-servers"></div>
       <button class="btn" id="b-create">Ban</button>
     </div>
+    <div class="form" style="margin-top:-8px">
+      <input class="inp" id="l-discord" placeholder="Discord ID to link" style="max-width:180px" />
+      <input class="inp" id="l-forum-id" placeholder="Forum user ID" style="max-width:140px" />
+      <input class="inp" id="l-forum-name" placeholder="Forum username (different name OK)" style="flex:1" />
+      <button class="btn ghost" id="l-save">Link forum</button>
+      <button class="btn ghost" id="l-load">Show links</button>
+    </div>
+    <div id="l-list" class="dim" style="margin-bottom:12px"></div>
     <div id="b-list"></div>
   </div>
 
@@ -221,6 +229,22 @@ async function loadAppeals() {
 }
 $('a-load').onclick = loadAppeals;
 loadAppeals();
+
+// Identity links (Discord <-> forum, different usernames OK)
+async function loadLinks() {
+  const did = (($('l-discord').value || $('b-user').value) || '').trim();
+  if (!did) return $('l-list').textContent = 'Enter a Discord ID to see forum links.';
+  const r = await api('/api/links/' + encodeURIComponent(did)); if (!r.ok) return;
+  const j = await r.json();
+  $('l-list').innerHTML = j.items.length ? 'Linked: ' + j.items.map((l) => esc(l.platform) + '=' + esc(l.external_username || l.external_id) + (l.verified ? ' ✓' : ' (manual)')).join(', ') : 'No forum link for this Discord ID — add one above to sync forum bans.';
+}
+$('l-load').onclick = loadLinks;
+$('l-save').onclick = async () => {
+  const body = { discord_id: $('l-discord').value.trim() || $('b-user').value.trim(), platform: 'discourse', external_id: $('l-forum-id').value.trim(), external_username: $('l-forum-name').value.trim() };
+  if (!body.discord_id || !body.external_id) return alert('Discord ID + forum user ID required');
+  const r = await api('/api/links', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  alert(JSON.stringify(await r.json())); loadLinks();
+};
 
 // Notes
 async function loadNotes() {

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { pollDiscord, backfillDiscordThreads, setThreadState } from './poll';
-import modTools, { expireBans, expireTimeouts } from './modtools';
+import modTools, { expireBans, expireTimeouts, upsertIdentityLink } from './modtools';
 import { verifyAccessJwt } from './access';
 import {
   discordLoginUrl,
@@ -47,6 +47,11 @@ type Bindings = {
   MOD_TOOL_SERVERS?: string;
   DISCOURSE_BASE_URL?: string;
   DISCOURSE_ADMIN_KEY?: string;
+  // Cold archive (long-term notes/reasons outside D1 to stay on free tier):
+  // GitHub private repo is truth (structured issues), Discord webhook is mirror.
+  ARCHIVE_GITHUB_TOKEN?: string;
+  ARCHIVE_GITHUB_REPO?: string; // "owner/repo"
+  ARCHIVE_DISCORD_WEBHOOK_URL?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -893,9 +898,27 @@ app.post('/hooks/discourse', async (c) => {
       }
     }
     const payload = JSON.parse(raw) as {
-      post?: { topic_slug?: string; raw?: string; username?: string; category_slug?: string; topic_id?: number; post_number?: number };
+      post?: { topic_slug?: string; raw?: string; username?: string; category_slug?: string; topic_id?: number; post_number?: number; user_id?: number; custom_fields?: Record<string, unknown> };
       topic?: { title?: string; tags?: string[]; category_slug?: string };
+      user?: { id?: number; username?: string; custom_fields?: Record<string, unknown> };
+      discord_id?: string;
+      discord_user_id?: string;
+      external_id?: string | number;
     };
+    // Auto-verify identity link when the forum sends a Discord ID:
+    // supports {discord_id}, user.custom_fields.discord_id, or post.custom_fields.
+    try {
+      const custom = { ...(payload.user?.custom_fields ?? {}), ...(payload.post?.custom_fields ?? {}) } as Record<string, unknown>;
+      const discordId = String(payload.discord_id ?? payload.discord_user_id ?? custom['discord_id'] ?? custom['discord_user_id'] ?? '').trim();
+      const forumUserId = payload.user?.id ?? payload.post?.user_id ?? payload.external_id;
+      const forumUsername = payload.user?.username ?? payload.post?.username ?? '';
+      if (/^\d{10,}$/.test(discordId) && forumUserId) {
+        await upsertIdentityLink(c.env.DB, discordId, 'discourse', String(forumUserId), String(forumUsername).slice(0, 80), 1, 'discourse-webhook');
+        jsonLog('info', 'identity auto-linked', { discordId, forumUserId });
+      }
+    } catch {
+      /* auto-link best-effort */
+    }
     const category = payload.post?.category_slug ?? payload.topic?.category_slug ?? 'support';
     const type = category.includes('idea') ? 'idea' : category.includes('support') ? 'support' : 'mailed';
     const title = payload.topic?.title ?? `New forum post in ${category}`;
@@ -1109,14 +1132,99 @@ app.delete('/api/servers/:id/token', async (c) => {
 // Mod tools: Ban Sync, Timeouts, Infractions, Appeals, Notes (/api/* + /hooks/appeal).
 app.route('/', modTools);
 
+// Manual cold-archive trigger (mod auth): archives up to 20 purgable items now.
+app.post('/api/admin/archive-now', async (c) => {
+  try {
+    const deleted = await purgeOld(c.env.DB, c.env);
+    return c.json({ ok: true, deleted });
+  } catch (err) {
+    jsonLog('error', 'manual archive failed', { error: String(err) });
+    return bad('Archive failed', 500);
+  }
+});
+
 // Fallback: serve static assets (Tools hub + Mail UI). API/hooks above take precedence.
 app.all('*', async (c) => {
   return c.env.ASSETS.fetch(c.req.raw);
 });
 
-// Retention: cron deletes inbox items (and their notes) older than 90 days.
+// Retention: cron archives inbox items (and their notes) older than 90 days
+// to cold storage (GitHub truth + Discord mirror) then deletes them.
+// Keeps D1 under free limits (5GB / 500MB per DB) forever.
 // Enable via "triggers": { "crons": ["0 3 * * *"] } in wrangler configs.
-async function purgeOld(db: D1Database, days = 90): Promise<number> {  const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+type ArchiveItem = {
+  id: string; server: string; type: string; author: string; title: string;
+  content: string; created_at: string; notes?: { by: string; text: string; created_at: string }[];
+};
+
+async function archiveToGitHub(env: Bindings, items: ArchiveItem[]): Promise<number> {
+  const token = env.ARCHIVE_GITHUB_TOKEN;
+  const repo = env.ARCHIVE_GITHUB_REPO; // "owner/repo"
+  if (!token || !repo || !items.length) return 0;
+  let done = 0;
+  // Bound: free Workers allow 50 subrequests/invocation; keep batches small.
+  for (const it of items.slice(0, 10)) {
+    try {
+      const body = [
+        `server: ${it.server} | type: ${it.type} | author: ${it.author} | created: ${it.created_at}`,
+        ``,
+        (it.content || '').slice(0, 4000),
+        ``,
+        ...(it.notes ?? []).slice(0, 10).map((n) => `- note by ${n.by} (${n.created_at}): ${n.text.slice(0, 500)}`),
+      ].join('\n');
+      const r = await fetch(`https://api.github.com/repos/${repo}/issues`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json', Accept: 'application/vnd.github+json' },
+        body: JSON.stringify({ title: `[archive] ${it.server}/${it.type} ${it.title.slice(0, 80)}`, body: body.slice(0, 6000), labels: ['mod-archive'] }),
+      });
+      if (r.ok) done++;
+      else jsonLog('warn', 'github archive failed', { status: r.status, id: it.id });
+    } catch (err) {
+      jsonLog('warn', 'github archive error', { error: String(err), id: it.id });
+    }
+  }
+  return done;
+}
+
+async function archiveToDiscord(env: Bindings, items: ArchiveItem[]): Promise<boolean> {
+  const url = env.ARCHIVE_DISCORD_WEBHOOK_URL;
+  if (!url || !items.length) return false;
+  try {
+    const lines = items.slice(0, 10).map((it) => `• [${it.server}/${it.type}] ${it.title.slice(0, 100)} — ${it.author} (${it.created_at.slice(0, 10)})${it.notes?.length ? ` +${it.notes.length} notes` : ''}`);
+    const content = [`**Mod archive** — ${items.length} item(s) purged from D1 (90d retention):`, ...lines].join('\n').slice(0, 1800);
+    const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content }) });
+    return r.ok;
+  } catch (err) {
+    jsonLog('warn', 'discord archive error', { error: String(err) });
+    return false;
+  }
+}
+
+async function purgeOld(db: D1Database, env?: Bindings, days = 90): Promise<number> {
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+  // Archive before delete so reasons/notes survive outside D1.
+  if (env && (env.ARCHIVE_GITHUB_TOKEN || env.ARCHIVE_DISCORD_WEBHOOK_URL)) {
+    try {
+      const rows = await db
+        .prepare('SELECT id, server, type, author, title, content, created_at FROM inbox_items WHERE created_at < ? ORDER BY created_at ASC LIMIT 20')
+        .bind(cutoff)
+        .all<ArchiveItem>();
+      const items = rows.results ?? [];
+      if (items.length) {
+        for (const it of items) {
+          try {
+            const n = await db.prepare('SELECT by, text, created_at FROM notes WHERE item_id = ? ORDER BY created_at ASC LIMIT 20').bind(it.id).all<{ by: string; text: string; created_at: string }>();
+            it.notes = (n.results ?? []) as ArchiveItem['notes'];
+          } catch { it.notes = []; }
+        }
+        const g = await archiveToGitHub(env, items);
+        const d = await archiveToDiscord(env, items);
+        jsonLog('info', 'cold archive complete', { items: items.length, github: g, discord: d });
+      }
+    } catch (err) {
+      jsonLog('warn', 'cold archive failed, proceeding with purge', { error: String(err) });
+    }
+  }
   await db
     .prepare(`DELETE FROM notes WHERE item_id IN (SELECT id FROM inbox_items WHERE created_at < ?)`)
     .bind(cutoff)
@@ -1131,7 +1239,7 @@ export default {
     // Daily retention window (cron "0 3 * * *"); every other cron tick polls.
     if (event.cron === '0 3 * * *') {
       try {
-        const deleted = await purgeOld(env.DB);
+        const deleted = await purgeOld(env.DB, env);
         jsonLog('info', 'retention purge complete', { deleted });
       } catch (err) {
         jsonLog('error', 'retention purge failed', { error: String(err) });
