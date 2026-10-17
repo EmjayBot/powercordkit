@@ -578,4 +578,168 @@ mod.delete('/api/links/:discordId/:platform', async (c) => {
   return c.json({ ok: true });
 });
 
+// ------------------------------------------------------------------ Apply plans via bot
+// One-click apply for the Slowmode + Lockdown planners: the Worker (which
+// already holds DISCORD_BOT_TOKEN) sets channel slowmode + @everyone
+// overwrites directly. Needs channel IDs (Discord has no bulk import;
+// #names alone can't be resolved without a channel list).
+const SNOW = /^\d{10,}$/;
+
+async function discordJson(token: string, method: string, path: string, body?: unknown): Promise<{ ok: boolean; status: number; data?: any }> {
+  const r = await fetch('https://discord.com/api/v10' + path, {
+    method,
+    headers: { Authorization: 'Bot ' + token, 'content-type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data: any = null;
+  try {
+    data = await r.json();
+  } catch {
+    /* non-JSON (e.g. 204) */
+  }
+  return { ok: r.ok, status: r.status, data };
+}
+
+async function mailResult(
+  db: D1Database,
+  input: { server: string; title: string; content: string; by: string },
+): Promise<void> {
+  try {
+    await db
+      .prepare(
+        `INSERT INTO inbox_items (id, server, type, tag, author, title, content, time, prio, src, by, url, assigned, archived, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        newId(), input.server.slice(0, 80), 'ticket', 'ticket', 'bot-apply', input.title.slice(0, 300),
+        input.content.slice(0, 8000), 'now', 'normal', 'discord', input.by.slice(0, 80), '#', null, 0,
+        new Date().toISOString(),
+      )
+      .run();
+  } catch {
+    /* mail best-effort */
+  }
+}
+
+// Deny bitfields for lockdown modes (@everyone overwrite, type 0).
+// readonly: SendMessages; locked: + AddReactions + thread creates/sends.
+const DENY: Record<string, string> = {
+  open: '0',
+  slow: '0',
+  readonly: '2048',
+  locked: '377957128160',
+};
+
+mod.post('/api/apply/slowmode', async (c) => {
+  try {
+    const token = c.env.DISCORD_BOT_TOKEN;
+    if (!token) return bad('Bot token not configured — set DISCORD_BOT_TOKEN', 400);
+    const body = await readJson<{ server?: string; channels?: { channel_id?: string; slowmode_seconds?: number; note?: string }[] }>(c);
+    const slug = (body.server ?? '').trim();
+    const guild = toolServers(c.env)[slug]?.guild;
+    if (!slug || !guild) return bad('unknown server slug — check MOD_TOOL_SERVERS', 400);
+    const channels = Array.isArray(body.channels) ? body.channels.slice(0, 25) : [];
+    if (!channels.length) return bad('at least one channel required (max 25)', 400);
+    for (const ch of channels) {
+      if (!ch || !SNOW.test(String(ch.channel_id ?? ''))) return bad('each channel needs a valid channel_id snowflake', 400);
+      const s = Number(ch.slowmode_seconds ?? 0);
+      if (!Number.isInteger(s) || s < 0 || s > 21600) return bad('slowmode_seconds must be 0–21600', 400);
+    }
+    const modId = await actingMod(c.env, c.req.raw.headers);
+    if (!(await checkRateLimit(c.env.DB, 'apply:' + modId, 5, 60000)))
+      return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
+    const results: Record<string, { ok: boolean; status?: number }> = {};
+    for (const ch of channels) {
+      const id = String(ch.channel_id);
+      const r = await discordJson(token, 'PATCH', `/channels/${id}`, { rate_limit_per_user: Number(ch.slowmode_seconds ?? 0) });
+      results[id] = { ok: r.ok, status: r.status };
+    }
+    const okCount = Object.values(results).filter((r) => r.ok).length;
+    await audit(c.env.DB, { action: 'apply_slowmode', mod_id: modId, detail: { server: slug, okCount, total: channels.length } });
+    await mailResult(c.env.DB, {
+      server: slug,
+      title: `Slowmode applied ${okCount}/${channels.length} by ${modId}`,
+      content: JSON.stringify({ tool: 'slowmode-apply', server: slug, results }, null, 2),
+      by: 'slowmode-apply',
+    });
+    return c.json({ ok: okCount > 0, results });
+  } catch (err) {
+    jsonLog('error', 'apply slowmode failed', { error: String(err) });
+    return bad('Failed to apply slowmode', 500);
+  }
+});
+
+mod.post('/api/apply/lockdown', async (c) => {
+  try {
+    const token = c.env.DISCORD_BOT_TOKEN;
+    if (!token) return bad('Bot token not configured — set DISCORD_BOT_TOKEN', 400);
+    const body = await readJson<{
+      server?: string;
+      exempt_roles?: string[];
+      channels?: { channel_id?: string; mode?: string; slowmode_seconds?: number; note?: string }[];
+    }>(c);
+    const slug = (body.server ?? '').trim();
+    const guild = toolServers(c.env)[slug]?.guild;
+    if (!slug || !guild) return bad('unknown server slug — check MOD_TOOL_SERVERS', 400);
+    const modes = ['open', 'slow', 'readonly', 'locked'];
+    const channels = Array.isArray(body.channels) ? body.channels.slice(0, 25) : [];
+    if (!channels.length) return bad('at least one channel required (max 25)', 400);
+    for (const ch of channels) {
+      if (!ch || !SNOW.test(String(ch.channel_id ?? ''))) return bad('each channel needs a valid channel_id snowflake', 400);
+      if (!modes.includes(String(ch.mode ?? ''))) return bad('mode must be open|slow|readonly|locked', 400);
+      const s = Number(ch.slowmode_seconds ?? 0);
+      if (!Number.isInteger(s) || s < 0 || s > 21600) return bad('slowmode_seconds must be 0–21600', 400);
+    }
+    const modId = await actingMod(c.env, c.req.raw.headers);
+    if (!(await checkRateLimit(c.env.DB, 'apply:' + modId, 5, 60000)))
+      return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
+    // Resolve exempt role names -> IDs (best-effort; names that don't match are skipped).
+    const wantNames = [...new Set((body.exempt_roles ?? []).map((s) => String(s).trim().toLowerCase()).filter(Boolean))].slice(0, 10);
+    let exemptIds: { id: string; name: string }[] = [];
+    if (wantNames.length) {
+      const roles = await discordJson(token, 'GET', `/guilds/${guild}/roles`);
+      const list = Array.isArray(roles.data) ? roles.data : [];
+      exemptIds = list
+        .filter((r: any) => r && wantNames.includes(String(r.name ?? '').toLowerCase()))
+        .map((r: any) => ({ id: String(r.id), name: String(r.name) }));
+    }
+    const results: Record<string, any> = {};
+    for (const ch of channels) {
+      const id = String(ch.channel_id);
+      const mode = String(ch.mode);
+      const entry: any = {};
+      const slow = await discordJson(token, 'PATCH', `/channels/${id}`, { rate_limit_per_user: Number(ch.slowmode_seconds ?? 0) });
+      entry.slowmode = { ok: slow.ok, status: slow.status };
+      const ow = await discordJson(token, 'PUT', `/channels/${id}/permissions/${guild}`, {
+        allow: '0',
+        deny: DENY[mode] ?? '0',
+        type: 0,
+      });
+      entry.overwrite = { ok: ow.ok, status: ow.status };
+      entry.exempt = [];
+      for (const ex of exemptIds) {
+        const er = await discordJson(token, 'PUT', `/channels/${id}/permissions/${ex.id}`, {
+          allow: '2048',
+          deny: '0',
+          type: 0,
+        });
+        entry.exempt.push({ role: ex.name, ok: er.ok, status: er.status });
+      }
+      results[id] = entry;
+    }
+    const okCount = Object.values(results).filter((r: any) => r.slowmode?.ok && r.overwrite?.ok).length;
+    await audit(c.env.DB, { action: 'apply_lockdown', mod_id: modId, detail: { server: slug, okCount, total: channels.length } });
+    await mailResult(c.env.DB, {
+      server: slug,
+      title: `Lockdown applied ${okCount}/${channels.length} by ${modId}`,
+      content: JSON.stringify({ tool: 'lockdown-apply', server: slug, exempt: exemptIds.map((e) => e.name), results }, null, 2),
+      by: 'lockdown-apply',
+    });
+    return c.json({ ok: okCount > 0, results, exempt_resolved: exemptIds.map((e) => e.name) });
+  } catch (err) {
+    jsonLog('error', 'apply lockdown failed', { error: String(err) });
+    return bad('Failed to apply lockdown', 500);
+  }
+});
+
 export default mod;
