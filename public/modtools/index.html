@@ -43,6 +43,7 @@ td{padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
     <div class="tab" data-t="timeouts">Timeouts</div>
     <div class="tab" data-t="infractions">Infractions</div>
     <div class="tab" data-t="appeals">Appeals</div>
+    <div class="tab" data-t="notes">Notes</div>
   </div>
 
   <!-- BANS -->
@@ -89,6 +90,18 @@ td{padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
     </div>
     <div id="a-list"></div>
   </div>
+
+  <!-- NOTES -->
+  <div class="pane" id="pane-notes">
+    <div class="form">
+      <input class="inp" id="n-user" placeholder="User ID / snowflake" />
+      <input class="inp" id="n-text" placeholder="Private note" style="flex:2" />
+      <input class="inp" id="n-mail" placeholder="Evidence mail ID (optional)" style="max-width:200px" />
+      <button class="btn" id="n-add">Add note</button>
+      <button class="btn ghost" id="n-load">Load</button>
+    </div>
+    <div id="n-list"></div>
+  </div>
 </div>
 <script src="/assets/site.js"></script>
 <script>
@@ -115,7 +128,7 @@ const selB = new Set();
 
 const urlParams = new URLSearchParams(location.search);
 const userParam = urlParams.get('user');
-if (userParam) $('i-user').value = userParam;
+if (userParam) { $('i-user').value = userParam; if ($('n-user')) $('n-user').value = userParam; }
 
 async function loadServers() {
   const r = await api('/api/modtools/servers');
@@ -147,7 +160,7 @@ function chips() {
 async function loadBans() {
   const r = await api('/api/bans'); if (!r.ok) return;
   const j = await r.json();
-  $('b-list').innerHTML = j.items.length ? '<table><tr><th>User</th><th>Reason</th><th>Servers</th><th>Mod</th><th>Date</th><th>Status</th><th></th></tr>' + j.items.map((b) => '<tr><td>' + esc(b.user_id) + '</td><td>' + esc(b.reason) + '</td><td>' + esc(b.servers_json) + '</td><td>' + esc(b.mod_id) + '</td><td class="dim">' + esc((b.created_at||'').slice(0,10)) + '</td><td>' + (b.is_active ? '<span class="ok">active</span>' : '<span class="dim">inactive</span>') + '</td><td>' + (b.is_active ? '<button class="btn ghost" data-unban="' + b.id + '">Unban</button>' : '') + '</td></tr>').join('') + '</table>' : '<div class="empty">No bans yet.</div>';
+  $('b-list').innerHTML = j.items.length ? '<table><tr><th>User</th><th>Reason</th><th>Servers</th><th>Expires</th><th>Evidence</th><th>Mod</th><th>Date</th><th>Status</th><th></th></tr>' + j.items.map((b) => '<tr><td>' + esc(b.user_id) + '</td><td>' + esc(b.reason) + '</td><td>' + esc(b.servers_json) + '</td><td class="dim">' + esc(b.expires_at || 'perm') + '</td><td>' + (b.evidence_mail_id ? '<a style="color:var(--b)" href="/mail/inbox/?q=' + encodeURIComponent(b.evidence_mail_id) + '">' + esc(String(b.evidence_mail_id).slice(0,8)) + '</a>' : '<span class="dim">—</span>') + '</td><td>' + esc(b.mod_id) + '</td><td class="dim">' + esc((b.created_at||'').slice(0,10)) + '</td><td>' + (b.is_active ? '<span class="ok">active</span>' : '<span class="dim">inactive</span>') + '</td><td>' + (b.is_active ? '<button class="btn ghost" data-unban="' + b.id + '">Unban</button>' : '') + '</td></tr>').join('') + '</table>' : '<div class="empty">No bans yet.</div>';
   document.querySelectorAll('[data-unban]').forEach((x) => x.onclick = async () => { await api('/api/bans/' + x.dataset.unban + '/unban', { method: 'POST' }); loadBans(); });
 }
 $('b-create').onclick = async () => {
@@ -176,12 +189,20 @@ $('t-create').onclick = async () => {
 loadTimeouts();
 
 // Infractions
+function detailFor(t) {
+  if (t.kind === 'note') return esc(t.note || '');
+  if (t.kind === 'ban') return esc(t.reason || '') + (t.expires_at ? ' <span class="dim">(expires ' + esc(t.expires_at) + ')</span>' : ' <span class="dim">(perm)</span>') + (t.evidence_mail_id ? ' <a style="color:var(--b)" href="/mail/inbox/?q=' + encodeURIComponent(t.evidence_mail_id) + '">evidence</a>' : '');
+  if (t.kind === 'timeout') return esc(t.reason || '') + (t.expires_at ? ' <span class="dim">(until ' + esc(t.expires_at) + ')</span>' : '');
+  if (t.kind === 'appeal') return esc(t.status || '') + ' <span class="dim">ban ' + esc(String(t.ban_id || '').slice(0,8)) + '</span>';
+  if (t.kind === 'infraction') return esc((t.type ? t.type + ': ' : '') + (t.reason || '')) + (t.mail_item_id ? ' <a style="color:var(--b)" href="/mail/inbox/?q=' + encodeURIComponent(t.mail_item_id) + '">evidence</a>' : '');
+  return esc(t.reason || t.status || t.user_id);
+}
 async function loadInfractions() {
   const user = $('i-user').value.trim();
   if (!user) return $('i-list').innerHTML = '<div class="empty">Enter a user id.</div>';
   const r = await api('/api/infractions/' + encodeURIComponent(user) + '/timeline'); if (!r.ok) return;
   const j = await r.json();
-  $('i-list').innerHTML = j.timeline.length ? '<table><tr><th>Kind</th><th>Date</th><th>Detail</th></tr>' + j.timeline.map((t) => '<tr><td><span class="badge">' + esc(t.kind) + '</span></td><td class="dim">' + esc((t.created_at||'').slice(0,16)) + '</td><td>' + esc(t.reason || t.status || t.user_id) + '</td></tr>').join('') + '</table>' : '<div class="empty">No history for that user.</div>';
+  $('i-list').innerHTML = j.timeline.length ? '<table><tr><th>Kind</th><th>Date</th><th>Detail</th></tr>' + j.timeline.map((t) => '<tr><td><span class="badge">' + esc(t.kind) + '</span></td><td class="dim">' + esc((t.created_at||'').slice(0,16)) + '</td><td>' + detailFor(t) + '</td></tr>').join('') + '</table>' : '<div class="empty">No history for that user.</div>';
 }
 $('i-add').onclick = async () => {
   const body = { user_id: $('i-user').value.trim(), type: $('i-type').value, reason: $('i-reason').value.trim() };
@@ -200,6 +221,22 @@ async function loadAppeals() {
 }
 $('a-load').onclick = loadAppeals;
 loadAppeals();
+
+// Notes
+async function loadNotes() {
+  const user = ($('n-user').value || '').trim();
+  if (!user) return $('n-list').innerHTML = '<div class="empty">Enter a user id.</div>';
+  const r = await api('/api/user-notes/' + encodeURIComponent(user)); if (!r.ok) return;
+  const j = await r.json();
+  $('n-list').innerHTML = j.items.length ? '<table><tr><th>Date</th><th>Mod</th><th>Note</th><th>Evidence</th></tr>' + j.items.map((n) => '<tr><td class="dim">' + esc((n.created_at||'').slice(0,16)) + '</td><td>' + esc(n.mod_id) + '</td><td>' + esc(n.note) + '</td><td>' + (n.mail_item_id ? '<a style="color:var(--b)" href="/mail/inbox/?q=' + encodeURIComponent(n.mail_item_id) + '">' + esc(String(n.mail_item_id).slice(0,8)) + '</a>' : '<span class="dim">—</span>') + '</td></tr>').join('') + '</table>' : '<div class="empty">No notes for that user.</div>';
+}
+$('n-add').onclick = async () => {
+  const body = { user_id: $('n-user').value.trim(), note: $('n-text').value.trim(), mail_item_id: $('n-mail').value.trim() || undefined };
+  if (!body.user_id || !body.note) return alert('User and note required');
+  const r = await api('/api/user-notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  alert(JSON.stringify(await r.json())); $('n-text').value = ''; loadNotes();
+};
+$('n-load').onclick = loadNotes;
 </script>
 </body>
 </html>

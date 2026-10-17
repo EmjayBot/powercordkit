@@ -22,7 +22,11 @@ const bad = (msg: string, status = 400) => Response.json({ ok: false, error: msg
 async function readJson<T>(c: any): Promise<T> {
   const raw = await c.req.text();
   if (raw.length > 262144) throw new Response('Payload too large', { status: 413 });
-  return JSON.parse(raw) as T;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw Response.json({ ok: false, error: 'Invalid JSON' }, { status: 400 });
+  }
 }
 
 type ToolServers = Record<string, { guild?: string }>;
@@ -47,16 +51,39 @@ mod.get('/api/modtools/servers', (c) => {
   return c.json({ ok: true, servers });
 });
 
-function rateLimit(key: string, max: number, windowMs: number): boolean {
-  const g = globalThis as any;
-  const buckets: Map<string, number[]> = g.__rl ?? new Map<string, number[]>();
-  g.__rl = buckets;
+function fixedWindowKey(key: string): string {
+  return key;
+}
+
+// D1-backed fixed-window rate limit. Works across Workers isolates
+// (the old in-memory Map did not). Returns true when allowed.
+async function checkRateLimit(db: D1Database, key: string, max: number, windowMs: number): Promise<boolean> {
   const now = Date.now();
-  const arr = (buckets.get(key) ?? []).filter((t) => now - t < windowMs);
-  if (arr.length >= max) { buckets.set(key, arr); return false; }
-  arr.push(now);
-  buckets.set(key, arr);
-  return true;
+  try {
+    const row = await db
+      .prepare('SELECT count, window_start FROM rate_limits WHERE key = ?')
+      .bind(fixedWindowKey(key))
+      .first<{ count: number; window_start: string }>();
+    const windowStart = row ? Date.parse(row.window_start) : NaN;
+    if (!row || Number.isNaN(windowStart) || now - windowStart >= windowMs) {
+      await db
+        .prepare(
+          'INSERT INTO rate_limits (key, count, window_start) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = 1, window_start = excluded.window_start',
+        )
+        .bind(fixedWindowKey(key), new Date(now).toISOString())
+        .run();
+      return true;
+    }
+    if (row.count >= max) return false;
+    await db
+      .prepare('UPDATE rate_limits SET count = count + 1 WHERE key = ?')
+      .bind(fixedWindowKey(key))
+      .run();
+    return true;
+  } catch {
+    // Fail open if the table doesn't exist yet (pre-migration): don't block mods.
+    return true;
+  }
 }
 
 async function audit(db: D1Database, e: { action: string; user_id?: string; mod_id?: string; detail?: unknown }) {
@@ -79,6 +106,77 @@ async function discordReq(token: string, method: string, path: string, body?: un
   return { ok: r.ok, status: r.status };
 }
 
+async function unsuspendDiscourse(
+  env: Env,
+  userId: string,
+): Promise<{ ok: boolean; status?: number; error?: string } | null> {
+  const base = env.DISCOURSE_BASE_URL?.replace(/\/$/, '');
+  if (!base || !env.DISCOURSE_ADMIN_KEY) return null;
+  try {
+    const r = await fetch(`${base}/admin/users/${userId}/unsuspend.json`, {
+      method: 'POST',
+      headers: { 'Api-Key': env.DISCOURSE_ADMIN_KEY, 'Api-Username': 'system' },
+    });
+    return { ok: r.ok, status: r.status };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+// Unban everywhere a ban row covers (Discord guilds + Discourse).
+// Best-effort: callers still deactivate the row even when a remote fails.
+async function unbanEverywhere(
+  env: Env,
+  ban: { user_id: string; servers_json?: string | null },
+): Promise<Record<string, { ok: boolean; status?: number; error?: string }>> {
+  const results: Record<string, { ok: boolean; status?: number; error?: string }> = {};
+  const servers = JSON.parse(ban.servers_json || '[]') as string[];
+  const map = toolServers(env);
+  const token = env.DISCORD_BOT_TOKEN;
+  if (token) {
+    for (const slug of servers) {
+      if (slug === 'discourse') continue;
+      const g = map[slug];
+      if (!g?.guild) {
+        results[slug] = { ok: false, error: 'unknown server slug' };
+        continue;
+      }
+      const r = await discordReq(token, 'DELETE', `/guilds/${g.guild}/bans/${ban.user_id}`);
+      results[slug] = { ok: r.ok, status: r.status };
+    }
+  } else {
+    for (const slug of servers) {
+      if (slug !== 'discourse') results[slug] = { ok: false, error: 'bot token not configured' };
+    }
+  }
+  if (servers.includes('discourse')) {
+    const r = await unsuspendDiscourse(env, ban.user_id);
+    results.discourse = r ?? { ok: false, error: 'discourse not configured' };
+  }
+  return results;
+}
+
+// Expire temp bans whose expires_at passed: unban remotely, deactivate,
+// audit. Returns count deactivated.
+export async function expireBans(db: D1Database, env: Env): Promise<number> {
+  const now = new Date().toISOString();
+  const rows = await db
+    .prepare('SELECT id, user_id, servers_json FROM bans WHERE is_active = 1 AND expires_at IS NOT NULL AND expires_at < ? LIMIT 50')
+    .bind(now)
+    .all<{ id: string; user_id: string; servers_json: string }>();
+  const list = rows.results ?? [];
+  for (const row of list) {
+    try {
+      await unbanEverywhere(env, row);
+    } catch (err) {
+      jsonLog('warn', 'expire ban remote failed', { id: row.id, error: String(err) });
+    }
+    await db.prepare('UPDATE bans SET is_active = 0 WHERE id = ?').bind(row.id).run();
+    await audit(db, { action: 'ban_expire', user_id: row.user_id, detail: { ban: row.id } });
+  }
+  return list.length;
+}
+
 // ------------------------------------------------------------------ Bans
 mod.post('/api/bans', async (c) => {
   try {
@@ -92,7 +190,8 @@ mod.post('/api/bans', async (c) => {
     if (!reason) return bad('reason required', 400);
     if (!servers.length) return bad('at least one server required', 400);
     const modId = await actingMod(c.env, c.req.raw.headers);
-    if (!rateLimit('ban:' + modId, 5, 60000)) return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
+    if (!(await checkRateLimit(c.env.DB, 'ban:' + modId, 5, 60000)))
+      return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
     const map = toolServers(c.env);
     const results: Record<string, { ok: boolean; status?: number; error?: string }> = {};
     for (const slug of servers) {
@@ -136,33 +235,13 @@ mod.get('/api/bans', async (c) => {
 
 mod.post('/api/bans/:id/unban', async (c) => {
   try {
-    const token = c.env.DISCORD_BOT_TOKEN;
-    if (!token) return bad('Bot token not configured', 400);
     const id = c.req.param('id');
     const row: any = await c.env.DB.prepare('SELECT * FROM bans WHERE id = ?').bind(id).first();
     if (!row) return bad('ban not found', 404);
     if (!row.is_active) return c.json({ ok: true, already: true });
-    const servers = JSON.parse(row.servers_json || '[]') as string[];
-    const map = toolServers(c.env);
-    const results: Record<string, { ok: boolean; status?: number; error?: string }> = {};
-    for (const slug of servers) {
-      const g = map[slug];
-      if (!g?.guild) { results[slug] = { ok: false, error: 'unknown server slug' }; continue; }
-      const r = await discordReq(token, 'DELETE', `/guilds/${g.guild}/bans/${row.user_id}`);
-      results[slug] = { ok: r.ok, status: r.status };
-    }
-    if (servers.includes('discourse')) {
-      const base = c.env.DISCOURSE_BASE_URL?.replace(/\/$/, '');
-      if (base && c.env.DISCOURSE_ADMIN_KEY) {
-        const r = await fetch(`${base}/admin/users/${row.user_id}/unsuspend.json`, {
-          method: 'POST',
-          headers: { 'Api-Key': c.env.DISCOURSE_ADMIN_KEY, 'Api-Username': 'system' },
-        });
-        results.discourse = { ok: r.ok, status: r.status };
-      } else results.discourse = { ok: false, error: 'discourse not configured' };
-    }
+    const results = await unbanEverywhere(c.env, row);
     await c.env.DB.prepare('UPDATE bans SET is_active = 0 WHERE id = ?').bind(id).run();
-    await audit(c.env.DB, { action: 'unban', user_id: row.user_id, detail: { servers } });
+    await audit(c.env.DB, { action: 'unban', user_id: row.user_id, detail: { servers: JSON.parse(row.servers_json || '[]') } });
     return c.json({ ok: true, results });
   } catch (err) {
     jsonLog('error', 'unban failed', { error: String(err) });
@@ -182,7 +261,8 @@ mod.post('/api/timeouts', async (c) => {
     if (!g?.guild) return bad('unknown server slug', 400);
     const mins = Math.min(Math.max(body.duration_minutes ?? 60, 1), 40320);
     const modId = await actingMod(c.env, c.req.raw.headers);
-    if (!rateLimit('timeout:' + modId, 10, 60000)) return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
+    if (!(await checkRateLimit(c.env.DB, 'timeout:' + modId, 10, 60000)))
+      return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
     const until = new Date(Date.now() + mins * 60000).toISOString();
     const r = await discordReq(token, 'PATCH', `/guilds/${g.guild}/members/${uid}`, { communication_disabled_until: until });
     if (!r.ok) return c.json({ ok: false, status: r.status }, 400);
@@ -243,7 +323,8 @@ mod.post('/api/infractions', async (c) => {
     if (!allowed.includes(type)) return bad('invalid type', 400);
     if (!body.user_id || !body.reason) return bad('user_id and reason required', 400);
     const modId = await actingMod(c.env, c.req.raw.headers);
-    if (!rateLimit('infraction:' + modId, 20, 60000)) return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
+    if (!(await checkRateLimit(c.env.DB, 'infraction:' + modId, 20, 60000)))
+      return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
     const id = newId();
     await c.env.DB.prepare(
       'INSERT INTO infractions (id, user_id, type, reason, mod_id, server_id, mail_item_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -266,16 +347,21 @@ mod.get('/api/infractions', async (c) => {
 mod.get('/api/infractions/:user/timeline', async (c) => {
   const user = c.req.param('user');
   if (!/^\d{10,}$/.test(user)) return bad('valid user_id required', 400);
-  const [bans, timeouts, infs, appeals] = await Promise.all([
+  const [bans, timeouts, infs, appeals, notes] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM bans WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
     c.env.DB.prepare('SELECT * FROM timeouts WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
     c.env.DB.prepare('SELECT * FROM infractions WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
     c.env.DB.prepare('SELECT * FROM appeals WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
+    c.env.DB.prepare('SELECT * FROM user_notes WHERE user_id = ? ORDER BY created_at DESC').bind(user).all().catch(() => ({ results: [] })),
   ]);
   const tagged = (rows: { results?: any[] }, kind: string) => (rows.results ?? []).map((r: any) => ({ kind, ...r, tag: kind }));
-  const timeline = [...tagged(bans, 'ban'), ...tagged(timeouts, 'timeout'), ...tagged(infs, 'infraction'), ...tagged(appeals, 'appeal')].sort(
-    (a, b) => String(b.created_at).localeCompare(String(a.created_at)),
-  );
+  const timeline = [
+    ...tagged(bans, 'ban'),
+    ...tagged(timeouts, 'timeout'),
+    ...tagged(infs, 'infraction'),
+    ...tagged(appeals, 'appeal'),
+    ...tagged(notes as { results?: any[] }, 'note'),
+  ].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   return c.json({ ok: true, timeline });
 });
 
@@ -286,15 +372,26 @@ mod.post('/hooks/appeal', async (c) => {
     if (body.honeypot) return c.json({ ok: true }); // silent spam trap
     const uid = (body.user_id ?? '').trim();
     if (!/^\d{10,}$/.test(uid)) return bad('valid user_id required', 400);
+    if (!body.ban_id) return bad('ban_id required', 400);
     const ban: any = await c.env.DB.prepare('SELECT * FROM bans WHERE id = ? AND is_active = 1').bind(body.ban_id).first();
     if (!ban) return bad('No active ban found for that ID', 404);
+    // The appeal must come from the banned user, not any user with a ban ID.
+    if (ban.user_id !== uid) return bad('That ban does not belong to this user', 403);
     const last: any = await c.env.DB.prepare('SELECT last_appeal_at FROM appeals WHERE ban_id = ? AND user_id = ? ORDER BY created_at DESC').bind(body.ban_id, uid).first();
     if (last?.last_appeal_at && Date.now() - new Date(last.last_appeal_at).getTime() < 86400000) {
       return bad('You already appealed in the last 24 hours', 429);
     }
-    const cf = c.req.header('CF-Connecting-IP') ?? '';
-    const ipHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(cf)).then((d) => [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join(''));
-    const answers = Object.entries(body.answers ?? {}).reduce<Record<string, string>>((o, [k, v]) => { o[k] = String(v).slice(0, 2000); return o; }, {});
+    const cf = c.req.header('CF-Connecting-IP') ?? c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() ?? '';
+    const ipHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(cf || 'unknown')).then((d) => [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join(''));
+    // Per-IP spam brake: 5 appeal submits per hour (D1-backed, shared).
+    if (!(await checkRateLimit(c.env.DB, 'appeal-ip:' + ipHash, 5, 3600000)))
+      return Response.json({ ok: false, error: 'Too many appeals from this network, try later' }, { status: 429 });
+    const entries = Object.entries(body.answers ?? {});
+    if (entries.length > 20) return bad('too many answers', 400);
+    const answers = entries.reduce<Record<string, string>>((o, [k, v]) => {
+      o[String(k).slice(0, 80)] = String(v).slice(0, 2000);
+      return o;
+    }, {});
     const id = newId();
     const now = new Date().toISOString();
     await c.env.DB.prepare(
@@ -302,7 +399,7 @@ mod.post('/hooks/appeal', async (c) => {
     ).bind(id, body.ban_id, uid, JSON.stringify(answers), 'open', ipHash, now, now).run();
     // Create a Mail item (type=appeal) so it lands in the inbox.
     await c.env.DB.prepare(
-      `INSERT INTO inbox_items (id, server, type, tag, author, title, content, time, prio, src, by, url, assigned, archived, roadmap, roadmap_status, roadmap_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '', '', ?)`,
+      `INSERT INTO inbox_items (id, server, type, tag, author, title, content, time, prio, src, by, url, assigned, archived, completed, roadmap, roadmap_status, roadmap_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, '', '', ?)`,
     ).bind(newId(), 'appeals', 'appeal', 'appeal', uid, `Appeal for ban ${String(body.ban_id).slice(0, 8)}`, JSON.stringify(answers).slice(0, 4000), 'now', 'high', 'discord', 'appeal', '', null, now).run();
     await audit(c.env.DB, { action: 'appeal_submit', user_id: uid, detail: { ban_id: body.ban_id } });
     return c.json({ ok: true, id });
@@ -324,18 +421,10 @@ async function decideAppeal(c: any, nextStatus: string, approve: boolean): Promi
     const row: any = await c.env.DB.prepare('SELECT * FROM appeals WHERE id = ?').bind(id).first();
     if (!row) return bad('appeal not found', 404);
     if (approve && row.status !== 'approved') {
-      // Trigger the unban flow for the linked ban.
+      // Trigger the full unban flow for the linked ban (Discord + Discourse).
       const ban: any = await c.env.DB.prepare('SELECT * FROM bans WHERE id = ? AND is_active = 1').bind(row.ban_id).first();
       if (ban) {
-        const token = c.env.DISCORD_BOT_TOKEN;
-        const map = toolServers(c.env);
-        if (token) {
-          const servers = JSON.parse(ban.servers_json || '[]') as string[];
-          for (const slug of servers) {
-            const g = map[slug];
-            if (g?.guild) await discordReq(token, 'DELETE', `/guilds/${g.guild}/bans/${ban.user_id}`);
-          }
-        }
+        await unbanEverywhere(c.env, ban);
         await c.env.DB.prepare('UPDATE bans SET is_active = 0 WHERE id = ?').bind(row.ban_id).run();
       }
     }
@@ -355,13 +444,16 @@ mod.post('/api/appeals/:id/deny', (c) => decideAppeal(c, 'denied', false));
 mod.post('/api/user-notes', async (c) => {
   try {
     const body = await readJson<{ user_id?: string; note?: string; mail_item_id?: string }>(c);
-    if (!body.user_id || !body.note) return bad('user_id and note required', 400);
+    const uid = (body.user_id ?? '').trim();
+    if (!/^\d{10,}$/.test(uid)) return bad('valid user_id required', 400);
+    if (!body.note?.trim()) return bad('user_id and note required', 400);
     const modId = await actingMod(c.env, c.req.raw.headers);
-    if (!rateLimit('note:' + modId, 20, 60000)) return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
+    if (!(await checkRateLimit(c.env.DB, 'note:' + modId, 20, 60000)))
+      return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
     const id = newId();
     await c.env.DB.prepare(
       'INSERT INTO user_notes (id, user_id, mod_id, note, mail_item_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    ).bind(id, body.user_id, modId, body.note.slice(0, 2000), body.mail_item_id ?? null, new Date().toISOString()).run();
+    ).bind(id, uid, modId, body.note.slice(0, 2000), body.mail_item_id ?? null, new Date().toISOString()).run();
     return c.json({ ok: true, id });
   } catch (err) {
     jsonLog('error', 'user note failed', { error: String(err) });
@@ -372,6 +464,15 @@ mod.post('/api/user-notes', async (c) => {
 mod.get('/api/user-notes', async (c) => {
   const user = c.req.query('user_id');
   if (!user) return bad('user_id required', 400);
+  if (!/^\d{10,}$/.test(user)) return bad('valid user_id required', 400);
+  const res = await c.env.DB.prepare('SELECT * FROM user_notes WHERE user_id = ? ORDER BY created_at DESC LIMIT 200').bind(user).all();
+  return c.json({ ok: true, items: res.results ?? [] });
+});
+
+// Alias for docs (`GET /api/user-notes/:user`); same as ?user_id=.
+mod.get('/api/user-notes/:user', async (c) => {
+  const user = c.req.param('user');
+  if (!/^\d{10,}$/.test(user)) return bad('valid user_id required', 400);
   const res = await c.env.DB.prepare('SELECT * FROM user_notes WHERE user_id = ? ORDER BY created_at DESC LIMIT 200').bind(user).all();
   return c.json({ ok: true, items: res.results ?? [] });
 });

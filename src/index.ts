@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { pollDiscord, backfillDiscordThreads, setThreadState } from './poll';
-import modTools, { expireTimeouts } from './modtools';
+import modTools, { expireBans, expireTimeouts } from './modtools';
 import { verifyAccessJwt } from './access';
 import {
   discordLoginUrl,
@@ -1136,6 +1136,14 @@ export default {
       } catch (err) {
         jsonLog('error', 'retention purge failed', { error: String(err) });
       }
+      // Still expire temp moderation actions on the daily tick (personal
+      // instances only have this cron, so they would otherwise never clear).
+      try {
+        await expireTimeouts(env.DB);
+        await expireBans(env.DB, env as any);
+      } catch (err) {
+        jsonLog('warn', 'expiry on retention tick failed', { error: String(err) });
+      }
       return;
     }
     try {
@@ -1149,6 +1157,12 @@ export default {
       if ((r.mailed ?? 0) > 0 || r.skipped !== 'no-bot-token') jsonLog('info', 'discord poll', r);
       const expired = await expireTimeouts(env.DB);
       if (expired > 0) jsonLog('info', 'timeouts expired', { expired });
+      try {
+        const unbanned = await expireBans(env.DB, env as any);
+        if (unbanned > 0) jsonLog('info', 'temp bans expired', { unbanned });
+      } catch (err) {
+        jsonLog('warn', 'temp ban expiry failed', { error: String(err) });
+      }
     } catch (err) {
       jsonLog('error', 'discord poll failed', { error: String(err) });
     }

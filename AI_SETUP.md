@@ -200,6 +200,8 @@ same Mail D1 + Worker. Product naming has no "Lab".
 
 **Database** — `migrations/0006_modtools.sql` adds `bans`, `timeouts`,
 `infractions`, `appeals`, `user_notes`, `audit_log` (counts as the foundation).
+`migrations/0007_rate_limits.sql` adds D1-backed `rate_limits` (fixed-window,
+works across isolates).
 
 **Config**
 - `MOD_TOOL_SERVERS` (wrangler var, JSON): map of `"<slug>": { "guild": "<guild-id>" }`
@@ -216,13 +218,13 @@ write is audited and rate-limited):
 
 | Tool | Route | Notes |
 |---|---|---|
-| Bans | `POST/GET /api/bans` · `POST /api/bans/:id/unban` | `PUT/DELETE /guilds/{g}/bans/{u}` (parallel, retry); `POST /admin/users/{id}/suspend` on Discourse |
-| Timeouts | `POST/GET /api/timeouts` · `POST /api/timeouts/:id/remove` | `PATCH /guilds/{g}/members/{u}` `communication_disabled_until`; 5-min cron expires + deactivates |
-| Infractions | `POST/GET /api/infractions` · `GET /api/infractions/:user/timeline` | Adds warnings; timeline merges bans/timeouts/warnings/mail/appeals for a user |
-| Appeals | `POST /hooks/appeal` (public) · `GET /api/appeals` · `POST /api/appeals/:id/approve|deny` | Public form (ban validated, 1 per ban/24h, honeypot, IP *hash*); creates a Mail item `type=appeal`; Approve triggers the Ban Sync unban |
-| Notes | `POST/GET /api/user-notes` · `GET /api/user-notes/:user` | Per-user private notes surfaced in Mail detail + every tool |
+| Bans | `POST/GET /api/bans` · `POST /api/bans/:id/unban` | `PUT/DELETE /guilds/{g}/bans/{u}` (parallel, retry); `POST /admin/users/{id}/suspend` on Discourse; temp `duration_minutes` auto-unbans via cron expiry |
+| Timeouts | `POST/GET /api/timeouts` · `POST /api/timeouts/:id/remove` | `PATCH /guilds/{g}/members/{u}` `communication_disabled_until`; cron expires + deactivates (every 2 min on community, daily on personal) |
+| Infractions | `POST/GET /api/infractions` · `GET /api/infractions/:user/timeline` | Adds warnings; timeline merges bans/timeouts/infractions/appeals/**notes**; evidence `mail_item_id` links to inbox |
+| Appeals | `POST /hooks/appeal` (public) · `GET /api/appeals` · `POST /api/appeals/:id/approve|deny` | Public form (ban must belong to user, 1 per ban/24h + 5/hr per IP, honeypot, IP *hash*); creates a Mail item `type=appeal`; Approve triggers full unban (Discord + Discourse) |
+| Notes | `POST/GET /api/user-notes` · `GET /api/user-notes/:user` | Per-user private notes surfaced in Mail detail + timeline + Notes tab (`/modtools/`) |
 
-**Rates:** bans 5/min, timeouts 10/min, appeals 1 per ban per 24h, notes
+**Rates (D1-backed):** bans 5/min, timeouts 10/min, appeals 1 per ban per 24h + 5/hr per IP, notes
 20/min (per mod).
 
 **Workflow:** Mail is the hub — approve an appeal from the inbox to trigger the
