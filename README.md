@@ -2,7 +2,7 @@
 
 Discord mod tools suite + Unified Mod Inbox.
 
-- **Tools** — self-contained tools (Embed, Color, Markdown, Timestamp, Snowflake, Webhook, Slowmode) that run anywhere static.
+- **Tools** — self-contained tools (Embed, Color, Markdown, Timestamp, Snowflake, Webhook, Slowmode, Permissions, Lockdown, Giveaways, Automod) that run anywhere static.
 - **Mail** — a unified mod inbox for Discord servers + forums: tickets, support threads, ideas, a roadmap, Discord login, and webhooks, on Cloudflare Workers + D1.
 
 Stack: Cloudflare **Workers** (Hono) + Static Assets (`./public`) + **D1** (`migrations/`).
@@ -32,6 +32,8 @@ The committed configs are generic placeholders (no account IDs, no domains, `REP
 | Slowmode Planner | `/slowmode/` | Static + optional POST to Mail |
 | Permissions | `/permissions/` | Static + optional POST to Mail |
 | Lockdown | `/lockdown/` | Static + optional POST to Mail |
+| Giveaways | `/giveaways/` | Static + optional POST to Mail |
+| Automod Tester | `/automod/` | Static + optional POST to Mail |
 | Ticket Triage | `/tickets/` | D1 via Mail API (`type=ticket`) |
 | Idea Capture | `/ideas/` | D1 via Mail API (`type=idea`) |
 | Roadmap | `/roadmap/` | D1 via Mail API (`/api/roadmap`) |

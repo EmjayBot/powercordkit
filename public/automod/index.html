@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Automod</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90;--ok:#3ba55d;--no:#ed4245}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:1fr 380px;gap:16px}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h3{margin:0 0 12px 0;font-size:14px}
+.inp,textarea.inp{width:100%;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;color:var(--t);font-size:13px;outline:none;font-family:inherit}
+textarea.inp{min-height:90px;resize:vertical}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
+.btnrow{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:11.5px;overflow:auto;max-height:320px;white-space:pre-wrap}
+.hint{font-size:12px;color:var(--m);line-height:1.6}
+.rule{border:1px solid var(--bd);border-radius:8px;padding:10px;margin-top:8px;background:var(--p2);font-size:13px}
+.rule.block{border-color:var(--no)}.rule.pass{border-color:rgba(59,165,93,.5)}
+mark{background:rgba(237,66,69,.35);color:#fff;border-radius:3px;padding:0 2px}
+label.chk{display:flex;gap:8px;align-items:center;font-size:13px;margin-top:8px}label.chk input{accent-color:var(--b)}
+</style>
+</head>
+<body>
+<div id="pck-nav"></div>
+<div class="wrap">
+  <div>
+    <div class="card"><h3>Test message</h3>
+      <textarea class="inp" id="msg" placeholder="Paste the message to test…">Hey @everyone check out FREE NITRO at http://bit.ly/xyz!!! WIN WIN WIN 🎉🎉🎉🎉🎉</textarea>
+      <div class="row" style="display:flex;gap:8px;margin-top:10px"><div style="flex:1"><label style="font-size:11px;color:var(--m)">Mention limit</label><input class="inp" id="mentions" type="number" min="0" max="50" value="3" /></div>
+      <div style="flex:1"><label style="font-size:11px;color:var(--m)">Caps % over</label><input class="inp" id="caps" type="number" min="0" max="100" value="70" /></div>
+      <div style="flex:1"><label style="font-size:11px;color:var(--m)">Max emoji</label><input class="inp" id="emoji" type="number" min="0" max="50" value="5" /></div></div>
+      <label class="chk"><input type="checkbox" id="links" checked /> Block links</label>
+    </div>
+    <div class="card"><h3>Keyword + regex rules</h3>
+      <label style="font-size:11px;color:var(--m)">Blocked keywords (comma-separated)</label>
+      <input class="inp" id="keywords" value="free nitro, steam gift, airdrop" />
+      <label style="font-size:11px;color:var(--m);margin-top:8px">Regex patterns (one per line, JS syntax)</label>
+      <textarea class="inp" id="regex" style="min-height:70px" placeholder="https?://bit\.ly/\S+&#10;(win\s?){3,}">https?://bit\.ly/\S+
+(win\s?){3,}</textarea>
+      <div class="hint" style="margin-top:8px">Discord keyword filter caps ~1000 keywords / 1000 chars per rule. Keep regexes tight — avoid <code>.*</code> runaway.</div>
+    </div>
+    <div class="card"><h3>Result</h3><div id="results"></div>
+      <div style="margin-top:10px"><div style="font-size:12px;color:var(--m);margin-bottom:4px">Highlighted</div><div id="hl" style="font-size:13px;line-height:1.7;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:10px;white-space:pre-wrap"></div></div>
+    </div>
+  </div>
+  <div>
+    <div class="card"><h3>Export</h3>
+      <div class="btnrow"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" style="flex:1">📬 Mail rule</button></div>
+      <pre class="out" id="out"></pre>
+    </div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+function test(){
+  const msg = $('msg').value || '';
+  const kws = $('keywords').value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  const regs = $('regex').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const hits = [];
+  const spans = [];
+  const low = msg.toLowerCase();
+  kws.forEach(k => { const i = low.indexOf(k); if (i >= 0){ hits.push({ rule:'keyword: '+k, ok:false }); spans.push([i, i+k.length]); } });
+  regs.forEach((r,idx) => {
+    try {
+      const re = new RegExp(r, 'gi');
+      let m, found = false;
+      while ((m = re.exec(msg)) !== null){ found = true; spans.push([m.index, m.index + m[0].length]); if (m.index === re.lastIndex) re.lastIndex++; if (spans.length > 50) break; }
+      hits.push({ rule:'regex['+(idx+1)+']: '+r, ok:!found });
+    } catch(e){ hits.push({ rule:'regex['+(idx+1)+']: '+r, ok:true, err:String(e).slice(0,120) }); }
+  });
+  const mentions = (msg.match(/@everyone|@here|<@!?\d+>|<#\d+>/g) || []).length;
+  const mMax = +$('mentions').value || 0;
+  hits.push({ rule:'mentions ≤ '+mMax+' (found '+mentions+')', ok: mentions <= mMax });
+  const letters = (msg.match(/[A-Za-z]/g) || []).length;
+  const caps = (msg.match(/[A-Z]/g) || []).length;
+  const pct = letters ? Math.round(caps/letters*100) : 0;
+  const capMax = +$('caps').value || 100;
+  hits.push({ rule:'caps '+pct+'% ≤ '+capMax+'%', ok: pct <= capMax });
+  const emojis = (msg.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu) || []).length;
+  const eMax = +$('emoji').value || 99;
+  hits.push({ rule:'emoji '+emojis+' ≤ '+eMax, ok: emojis <= eMax });
+  if ($('links').checked){
+    const hasLink = /https?:\/\/\S+/i.test(msg);
+    hits.push({ rule:'no links', ok: !hasLink });
+    if (hasLink){ const m = msg.match(/https?:\/\/\S+/i); spans.push([m.index, m.index + m[0].length]); }
+  }
+  const blocked = hits.some(h => !h.ok);
+  $('results').innerHTML = '<div style="font-size:14px;font-weight:800;margin-bottom:8px">' + (blocked ? '⛔ BLOCKED' : '✅ PASS') + '</div>' +
+    hits.map(h => '<div class="rule '+(h.ok?'pass':'block')+'">' + (h.ok?'✅ ':'⛔ ') + esc(h.rule) + (h.err ? '<div style="font-size:11px;color:var(--m)">'+esc(h.err)+'</div>' : '') + '</div>').join('');
+  spans.sort((a,b) => a[0]-b[0]);
+  let out = '', last = 0;
+  spans.forEach(([a,b]) => { if (a < last) return; out += esc(msg.slice(last, a)) + '<mark>' + esc(msg.slice(a, b)) + '</mark>'; last = b; });
+  out += esc(msg.slice(last));
+  $('hl').innerHTML = out || '<span style="color:var(--m)">Empty</span>';
+  $('out').textContent = JSON.stringify({ tool:'automod-tester', version:1, exported_at:new Date().toISOString(), verdict: blocked ? 'block' : 'pass',
+    message: msg.slice(0,2000), keywords: kws, regex: regs, limits: { mentions: mMax, caps_percent: capMax, emoji: eMax, block_links: $('links').checked } }, null, 2);
+}
+['msg','keywords','regex','mentions','caps','emoji','links'].forEach(id => $(id).oninput = $(id).onchange = test);
+$('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent); $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy JSON',1200); };
+$('mail').onclick = async () => {
+  const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ server:'staff', type:'ticket', title:'Automod rule for review', content:$('out').textContent.slice(0,8000), author:'you', by:'automod-tester', src:'discord' }) });
+  alert(r.ok ? 'Mailed to mod inbox ✓' : 'Mail API offline — run wrangler dev');
+};
+test();
+</script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
+</body>
+</html>
