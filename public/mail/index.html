@@ -121,8 +121,9 @@ async function load(){
       api('/api/inbox').then(r => { if(!r.ok) { const err = new Error('API ' + r.status); err.status = r.status; throw err; } return r.json(); })
     ]);
     const items = inbox.items || [];
-    setPills('API live', 'live', h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi');
-    $('host').textContent = 'on ' + (h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi');
+    const host = h.communityDomain || h.personalDomain || location.host;
+    setPills('API live', 'live', host);
+    $('host').textContent = 'on ' + host;
     const t = items.filter(i => i.type === 'ticket'), ideas = items.filter(i => i.type === 'idea');
     $('s-open').textContent = items.length;
     $('s-tickets').textContent = t.length;

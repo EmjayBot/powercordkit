@@ -64,8 +64,8 @@ function newId(): string {
   return crypto.randomUUID();
 }
 
-// Default source server for mailed items — per-env (personal: "general",
-// community: "tep.one") so neither site leaks the other's identity.
+// Default source server for mailed items — set DEFAULT_SERVER per env
+// (e.g. personal: "general", community: "main"). No hardcoded community.
 function defaultServer(env: Bindings): string {
   return (env.DEFAULT_SERVER ?? 'general').slice(0, 80);
 }
@@ -165,7 +165,7 @@ app.get('/api/auth/callback', async (c) => {
   const {
     DISCORD_CLIENT_ID: id,
     DISCORD_CLIENT_SECRET: secret,
-    DISCORD_GUILD_ID: guild = '633351482128728064',
+    DISCORD_GUILD_ID: guild = '',
     DISCORD_MOD_ROLE_ID: role,
     DISCORD_MOD_ROLE_IDS: rolesCsv,
     SESSION_SECRET: sess,
@@ -432,8 +432,8 @@ app.get('/api/health', (c) => {
   return c.json({
     ok: true,
     env: c.env.ENVIRONMENT ?? 'personal',
-    personalDomain: c.env.PERSONAL_DOMAIN ?? 'powercordkit.emjay.fyi',
-    communityDomain: c.env.COMMUNITY_DOMAIN ?? 'mail.example.com',
+    personalDomain: c.env.PERSONAL_DOMAIN ?? '',
+    communityDomain: c.env.COMMUNITY_DOMAIN ?? '',
     roadmapPublic: roadmapIsPublic(c.env),
     time: new Date().toISOString(),
   });

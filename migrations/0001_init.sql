@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS inbox_items (
   id TEXT PRIMARY KEY,
-  server TEXT NOT NULL DEFAULT 'tep.one',
+  server TEXT NOT NULL DEFAULT 'general',
   type TEXT NOT NULL DEFAULT 'idea',
   tag TEXT NOT NULL DEFAULT 'idea',
   author TEXT NOT NULL DEFAULT 'unknown',

@@ -186,9 +186,9 @@ Promote an idea: `POST /api/inbox/<id>/roadmap` with `{"status":"planned|in-prog
 ```json
 {
   "required": ["DEFAULT_SERVER", "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SESSION_SECRET", "DISCORD_GUILD_ID", "DISCORD_MOD_ROLE_IDS", "DISCORD_PUBLIC_KEY", "DISCORD_BOT_TOKEN"],
-  "optional": ["DISCORD_IDEA_ROLE_IDS", "DISCORD_COMPLETE_TAG", "DISCORD_WEBHOOK_SECRET", "DISCOURSE_WEBHOOK_SECRET", "FORUM_WEBHOOK_SECRET", "MOD_API_KEY", "ACCESS_TEAM_DOMAIN", "ACCESS_AUD"],
-  "vars": ["DEFAULT_SERVER", "FEED_MAP", "ENVIRONMENT", "COMMUNITY_DOMAIN"],
-  "secrets": ["DISCORD_CLIENT_SECRET", "DISCORD_PUBLIC_KEY", "DISCORD_BOT_TOKEN", "SESSION_SECRET", "DISCORD_WEBHOOK_SECRET", "DISCOURSE_WEBHOOK_SECRET", "MOD_API_KEY"],
+  "optional": ["DISCORD_IDEA_ROLE_IDS", "DISCORD_COMPLETE_TAG", "DISCORD_WEBHOOK_SECRET", "DISCOURSE_WEBHOOK_SECRET", "FORUM_WEBHOOK_SECRET", "MOD_API_KEY", "ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "DISCOURSE_BASE_URL", "DISCOURSE_ADMIN_KEY", "MOD_TOOL_SERVERS", "ARCHIVE_GITHUB_REPO", "ARCHIVE_GITHUB_TOKEN", "ARCHIVE_DISCORD_WEBHOOK_URL", "PERSONAL_DOMAIN", "COMMUNITY_DOMAIN"],
+  "vars": ["DEFAULT_SERVER", "FEED_MAP", "ENVIRONMENT", "COMMUNITY_DOMAIN", "PERSONAL_DOMAIN", "MOD_TOOL_SERVERS", "PUBLIC_ROADMAP", "MAX_PAYLOAD_BYTES"],
+  "secrets": ["DISCORD_CLIENT_SECRET", "DISCORD_PUBLIC_KEY", "DISCORD_BOT_TOKEN", "SESSION_SECRET", "DISCORD_WEBHOOK_SECRET", "DISCOURSE_WEBHOOK_SECRET", "MOD_API_KEY", "DISCOURSE_ADMIN_KEY", "ARCHIVE_GITHUB_TOKEN"],
   "config": "wrangler.community.jsonc"
 }
 ```
@@ -200,12 +200,27 @@ same Mail D1 + Worker. Product naming has no "Lab".
 
 **Database** — `migrations/0006_modtools.sql` adds `bans`, `timeouts`,
 `infractions`, `appeals`, `user_notes`, `audit_log` (counts as the foundation).
+`migrations/0007_rate_limits.sql` adds D1-backed `rate_limits` (fixed-window,
+works across isolates).
 
 **Config**
 - `MOD_TOOL_SERVERS` (wrangler var, JSON): map of `"<slug>": { "guild": "<guild-id>" }`
   for each server you moderate via Discord.
 - Secrets: if syncing suspends to Discourse, add `DISCOURSE_BASE_URL` and
   `DISCOURSE_ADMIN_KEY` (Admin → API → Create key, `suspend` permission).
+- Identity linking (Discord <-> forum, different usernames OK):
+  `identity_links` table (`migrations/0008_identity_links.sql`). Manual: `/modtools/`
+  Ban pane → Link forum (Discord ID + forum user ID + username). Auto: Discourse
+  webhook with `discord_id` in `user.custom_fields` / `post.custom_fields` upserts a
+  verified link. Ban/suspend/unsuspend resolve the forum ID via the link —
+  unlinked Discourse targets report `no linked discourse account` instead of
+  suspending the wrong user.
+- Cold archive (stay on Workers Free: 100k req/day, D1 5M reads/100k writes/day,
+  5GB total / 500MB per DB): retention cron archives 90d+ inbox items + notes
+  before delete. `ARCHIVE_GITHUB_REPO` (`owner/repo`, private) + `ARCHIVE_GITHUB_TOKEN`
+  = truth (one issue per item, label `mod-archive`); `ARCHIVE_DISCORD_WEBHOOK_URL` =
+  mirror summary. Manual: `POST /api/admin/archive-now`. Without either var,
+  purge just deletes (old behavior).
 
 **Bot permissions** — the bot needs **Ban Members** (bans) and
 **Moderate Members / Manage Members** (timeouts) on every guild in
@@ -216,13 +231,13 @@ write is audited and rate-limited):
 
 | Tool | Route | Notes |
 |---|---|---|
-| Bans | `POST/GET /api/bans` · `POST /api/bans/:id/unban` | `PUT/DELETE /guilds/{g}/bans/{u}` (parallel, retry); `POST /admin/users/{id}/suspend` on Discourse |
-| Timeouts | `POST/GET /api/timeouts` · `POST /api/timeouts/:id/remove` | `PATCH /guilds/{g}/members/{u}` `communication_disabled_until`; 5-min cron expires + deactivates |
-| Infractions | `POST/GET /api/infractions` · `GET /api/infractions/:user/timeline` | Adds warnings; timeline merges bans/timeouts/warnings/mail/appeals for a user |
-| Appeals | `POST /hooks/appeal` (public) · `GET /api/appeals` · `POST /api/appeals/:id/approve|deny` | Public form (ban validated, 1 per ban/24h, honeypot, IP *hash*); creates a Mail item `type=appeal`; Approve triggers the Ban Sync unban |
-| Notes | `POST/GET /api/user-notes` · `GET /api/user-notes/:user` | Per-user private notes surfaced in Mail detail + every tool |
+| Bans | `POST/GET /api/bans` · `POST /api/bans/:id/unban` | `PUT/DELETE /guilds/{g}/bans/{u}` (parallel, retry); `POST /admin/users/{id}/suspend` on Discourse; temp `duration_minutes` auto-unbans via cron expiry |
+| Timeouts | `POST/GET /api/timeouts` · `POST /api/timeouts/:id/remove` | `PATCH /guilds/{g}/members/{u}` `communication_disabled_until`; cron expires + deactivates (every 2 min on community, daily on personal) |
+| Infractions | `POST/GET /api/infractions` · `GET /api/infractions/:user/timeline` | Adds warnings; timeline merges bans/timeouts/infractions/appeals/**notes**; evidence `mail_item_id` links to inbox |
+| Appeals | `POST /hooks/appeal` (public) · `GET /api/appeals` · `POST /api/appeals/:id/approve|deny` | Public form (ban must belong to user, 1 per ban/24h + 5/hr per IP, honeypot, IP *hash*); creates a Mail item `type=appeal`; Approve triggers full unban (Discord + Discourse) |
+| Notes | `POST/GET /api/user-notes` · `GET /api/user-notes/:user` | Per-user private notes surfaced in Mail detail + timeline + Notes tab (`/modtools/`) |
 
-**Rates:** bans 5/min, timeouts 10/min, appeals 1 per ban per 24h, notes
+**Rates (D1-backed):** bans 5/min, timeouts 10/min, appeals 1 per ban per 24h + 5/hr per IP, notes
 20/min (per mod).
 
 **Workflow:** Mail is the hub — approve an appeal from the inbox to trigger the

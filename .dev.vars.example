@@ -1,5 +1,18 @@
 # Local dev secrets — copy to .dev.vars (gitignored). Never commit real secrets.
-# wrangler secret put DISCOURSE_WEBHOOK_SECRET
-# wrangler secret put DISCORD_WEBHOOK_SECRET
-DISCOURSE_WEBHOOK_SECRET=local-dev-discourse-secret
+# wrangler secret put <NAME> --config wrangler.community.jsonc (remote)
+# For `npm run dev` / `dev:community` these are read from .dev.vars.
 DISCORD_WEBHOOK_SECRET=local-dev-discord-secret
+DISCOURSE_WEBHOOK_SECRET=local-dev-discourse-secret
+# Discord login (local inbox auth):
+# DISCORD_CLIENT_ID=123456789012345678
+# DISCORD_CLIENT_SECRET=your-client-secret
+# SESSION_SECRET=local-random-32-bytes-hex
+# DISCORD_GUILD_ID=123456789012345678
+# DISCORD_MOD_ROLE_IDS=111111111111111111,222222222222222222
+# Poller / mod tools (local):
+# DISCORD_BOT_TOKEN=your-bot-token
+# MOD_TOOL_SERVERS={"main":{"guild":"123456789012345678"}}
+# Cold archive (optional, local no-op unless set):
+# ARCHIVE_GITHUB_REPO=owner/private-repo
+# ARCHIVE_GITHUB_TOKEN=ghp_example
+# ARCHIVE_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/xxx/yyy

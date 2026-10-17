@@ -171,7 +171,7 @@ async function load() {
     $('status').textContent = data.length + ' items • Workers + D1 • E to complete';
     api('/api/servers').then((r) => r.json()).then((sj) => renderFilters(sj.servers || [], sj.types || [])).catch(() => {});
     const h = await fetch('/api/health', { cache: 'no-store' }).then(x=>x.json()).catch(()=>null);
-    if (h) { if (window.PCK) window.PCK.right('<span class="pill">' + (h.env || 'personal') + '</span>'); $('api-env').textContent = (h.env === 'community' ? 'mod.tep.one' : 'powercordkit.emjay.fyi') + ' (Workers + D1)'; $('hook-hint').innerHTML = 'Discourse webhook:<br/>POST ' + (h.env === 'community' ? 'https://mod.tep.one/hooks/discourse' : 'https://powercordkit.emjay.fyi/hooks/discourse'); }
+    if (h) { if (window.PCK) window.PCK.right('<span class="pill">' + (h.env || 'personal') + '</span>'); const host = h.communityDomain || h.personalDomain || location.host; $('api-env').textContent = host + ' (Workers + D1)'; $('hook-hint').innerHTML = 'Discourse webhook:<br/>POST https://' + host + '/hooks/discourse'; }
   } catch (e) {
     // Never show fake items: this inbox only ever renders real API data.
     const code = (e && e.status) ? ('API ' + e.status) : 'API offline';
