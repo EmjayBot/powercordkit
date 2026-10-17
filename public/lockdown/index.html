@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lockdown</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:1fr 380px;gap:16px}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h3{margin:0 0 12px 0;font-size:14px}
+.inp{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;color:var(--t);font-size:13px;outline:none;width:100%}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--m);text-align:left;padding:6px 8px}
+td{padding:6px 8px;border-top:1px solid var(--bd);vertical-align:middle}
+.preset{display:inline-block;background:var(--p2);border:1px solid var(--bd);border-radius:999px;padding:5px 11px;font-size:11px;margin:0 6px 6px 0;cursor:pointer}
+.preset:hover{border-color:var(--b)}
+pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:11.5px;overflow:auto;max-height:340px;white-space:pre-wrap}
+.hint{font-size:12px;color:var(--m);line-height:1.6}
+.slot{display:flex;align-items:center;gap:10px;font-size:12px;padding:8px 10px;background:var(--p2);border:1px solid var(--bd);border-radius:8px;margin-bottom:6px}
+.dot{width:9px;height:9px;border-radius:99px}.open{background:#3ba55d}.slow{background:#fee75c}.readonly{background:#eb9227}.locked{background:#ed4245}
+ol.steps{font-size:13px;line-height:1.7;color:#d6d6da;margin:8px 0 0 18px;padding:0}ol.steps li{margin-bottom:4px}
+</style>
+</head>
+<body>
+<div id="pck-nav"></div>
+<div class="wrap">
+  <div>
+    <div class="card"><h3>Channels <button class="btn ghost" id="add" style="float:right;padding:5px 10px">+ Add</button></h3>
+      <div style="margin-bottom:10px"><span class="preset" data-p="open">Calm / open</span><span class="preset" data-p="slow">Raid 30s</span><span class="preset" data-p="readonly">Read-only</span><span class="preset" data-p="locked">Full lockdown</span></div>
+      <table><thead><tr><th>Channel</th><th>Mode</th><th>Slowmode (s)</th><th>Note</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+      <div class="hint" style="margin-top:10px">Modes map to <b>@everyone overwrites</b>: readonly denies <code>SendMessages</code>, locked also denies <code>AddReactions</code> + threads. Exempt roles keep sending.</div>
+    </div>
+    <div class="card"><h3>Exempt roles (keep talking)</h3>
+      <input class="inp" id="exempt" value="Mods, Helpers" placeholder="Comma-separated role names" />
+      <div class="hint" style="margin-top:8px">Applied as explicit Allows so mods aren't locked out.</div>
+    </div>
+    <div class="card"><h3>Status preview</h3><div id="tl"></div></div>
+  </div>
+  <div>
+    <div class="card"><h3>Apply checklist</h3>
+      <ol class="steps"><li>Set slowmode per channel (0–21600s).</li><li>Apply @everyone overwrites below.</li><li>Add explicit Allows for exempt roles.</li><li>Post a notice in #announcements.</li><li>Log it: mail this plan to the inbox.</li></ol>
+    </div>
+    <div class="card"><h3>Bot config export</h3>
+      <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" style="flex:1">📬 Mail plan</button></div>
+      <pre class="out" id="out"></pre>
+    </div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const MODES = {
+  open: { deny: [], label: 'open' },
+  slow: { deny: [], label: 'slow' },
+  readonly: { deny: ['SendMessages'], label: 'read-only' },
+  locked: { deny: ['SendMessages','AddReactions','CreatePublicThreads','CreatePrivateThreads','SendMessagesInThreads'], label: 'locked' },
+};
+let rows = [
+  { ch:'#general', mode:'slow', s:30, note:'raid: 30s + no threads' },
+  { ch:'#media', mode:'readonly', s:0, note:'read-only during raid' },
+  { ch:'#announcements', mode:'open', s:0, note:'staff post updates here' },
+];
+function render(){
+  $('rows').innerHTML = rows.map((r,i) =>
+    '<tr><td><input class="inp" data-i="'+i+'" data-k="ch" value="'+String(r.ch).replace(/"/g,'&quot;')+'"/></td>'+
+    '<td><select class="inp" data-i="'+i+'" data-k="mode">' + Object.keys(MODES).map(m => '<option value="'+m+'"'+(r.mode===m?' selected':'')+'>'+m+'</option>').join('') + '</select></td>'+
+    '<td><input class="inp" type="number" min="0" max="21600" data-i="'+i+'" data-k="s" value="'+r.s+'"/></td>'+
+    '<td><input class="inp" data-i="'+i+'" data-k="note" value="'+String(r.note||'').replace(/"/g,'&quot;')+'"/></td>'+
+    '<td><button class="btn ghost" data-del="'+i+'">✕</button></td></tr>').join('');
+  document.querySelectorAll('#rows input, #rows select').forEach(el => el.oninput = el.onchange = () => {
+    const i = +el.dataset.i, k = el.dataset.k;
+    rows[i][k] = k === 's' ? Math.max(0, Math.min(21600, +el.value || 0)) : el.value;
+    render();
+  });
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { rows.splice(+b.dataset.del,1); render(); });
+  $('tl').innerHTML = rows.map(r => '<div class="slot"><span class="dot '+r.mode+'"></span><b style="min-width:100px">'+String(r.ch).replace(/</g,'&lt;')+'</b><span>'+r.mode+'</span><span style="color:var(--m)">'+(r.s?r.s+'s':'')+' '+(String(r.note||'').replace(/</g,'&lt;'))+'</span></div>').join('') || '<span style="color:var(--m);font-size:12px">No channels.</span>';
+  const exempt = $('exempt').value.split(',').map(s => s.trim()).filter(Boolean);
+  $('out').textContent = JSON.stringify({ tool:'lockdown-plan', version:1, exported_at:new Date().toISOString(), exempt_roles: exempt,
+    channels: rows.map(r => ({ channel: r.ch, mode: r.mode, slowmode_seconds: r.s, deny_everyone: MODES[r.mode].deny, schedule_note: r.note || '' })) }, null, 2);
+}
+document.querySelectorAll('.preset').forEach(p => p.onclick = () => {
+  const m = p.dataset.p;
+  rows.forEach(r => { r.mode = m; if (m === 'slow' && !r.s) r.s = 30; if (m === 'open') r.s = 0; });
+  render();
+});
+$('add').onclick = () => { rows.push({ch:'#new-channel', mode:'slow', s:10, note:''}); render(); };
+$('exempt').oninput = render;
+$('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent); $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy JSON',1200); };
+$('mail').onclick = async () => {
+  const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ server:'staff', type:'ticket', title:'Lockdown plan for review', content:$('out').textContent.slice(0,8000), author:'you', by:'lockdown-planner', src:'discord' }) });
+  alert(r.ok ? 'Mailed to mod inbox ✓' : 'Mail API offline — run wrangler dev');
+};
+render();
+</script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
+</body>
+</html>

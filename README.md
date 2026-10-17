@@ -30,6 +30,8 @@ The committed configs are generic placeholders (no account IDs, no domains, `REP
 | Color | `/color/` | Static only (clipboard) |
 | Embed | `/embeds/` | Static + optional POST to Mail |
 | Slowmode Planner | `/slowmode/` | Static + optional POST to Mail |
+| Permissions | `/permissions/` | Static + optional POST to Mail |
+| Lockdown | `/lockdown/` | Static + optional POST to Mail |
 | Ticket Triage | `/tickets/` | D1 via Mail API (`type=ticket`) |
 | Idea Capture | `/ideas/` | D1 via Mail API (`type=idea`) |
 | Roadmap | `/roadmap/` | D1 via Mail API (`/api/roadmap`) |

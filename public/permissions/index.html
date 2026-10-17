@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Permissions</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90;--ok:#3ba55d;--no:#ed4245;--warn:#fee75c}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.wrap{max-width:1200px;margin:0 auto;padding:24px 20px 80px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:960px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h3{margin:0 0 12px 0;font-size:14px}
+.grp{margin-bottom:14px}.grp h4{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--m);margin:0 0 8px 0}
+.perm{display:flex;align-items:center;gap:8px;font-size:13px;padding:5px 8px;border-radius:8px;cursor:pointer}
+.perm:hover{background:var(--p2)}.perm input{accent-color:var(--b)}
+.perm .bit{margin-left:auto;font-size:10px;color:var(--m);font-family:monospace}
+.preset{display:inline-block;background:var(--p2);border:1px solid var(--bd);border-radius:999px;padding:5px 11px;font-size:11px;margin:0 6px 6px 0;cursor:pointer}
+.preset:hover{border-color:var(--b)}
+select.inp,.inp{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;color:var(--t);font-size:13px;outline:none;width:100%}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
+.btnrow{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:11.5px;overflow:auto;max-height:320px;white-space:pre-wrap}
+.warn{background:rgba(254,231,92,.07);border:1px solid rgba(254,231,92,.4);border-radius:8px;padding:8px 10px;font-size:12px;margin-top:8px}
+.okline{font-size:12px;color:var(--ok)}.err{font-size:12px;color:var(--no)}
+.chip{display:inline-block;font-size:11px;background:var(--p2);border:1px solid var(--bd);border-radius:999px;padding:3px 9px;margin:0 4px 4px 0}
+.tri{display:flex;gap:6px;align-items:center;font-size:12px}.tri button{background:var(--p2);border:1px solid var(--bd);color:var(--t);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer;min-width:64px}
+.tri button.on-allow{border-color:var(--ok);color:var(--ok)}.tri button.on-deny{border-color:var(--no);color:var(--no)}
+</style>
+</head>
+<body>
+<div id="pck-nav"></div>
+<div class="wrap">
+  <div>
+    <div class="card"><h3>Base role</h3>
+      <div style="margin-bottom:10px"><span class="preset" data-preset="mod">Moderator</span><span class="preset" data-preset="helper">Helper</span><span class="preset" data-preset="muted">Muted</span><span class="preset" data-preset="readonly">Read-only</span><span class="preset" data-preset="clear">Clear</span></div>
+      <div id="base"></div>
+    </div>
+    <div class="card"><h3>Channel overwrite (simulator)</h3>
+      <div style="font-size:12px;color:var(--m);margin-bottom:10px">Allow adds, Deny removes. <b>Administrator bypasses all overwrites.</b> Click to cycle: Neutral → Allow → Deny.</div>
+      <div id="over"></div>
+    </div>
+  </div>
+  <div>
+    <div class="card"><h3>Effective</h3>
+      <div style="font-size:12px;color:var(--m)">Bitfield (decimal)</div>
+      <div id="dec" style="font-size:20px;font-weight:800;font-variant-numeric:tabular-nums">0</div>
+      <div style="font-size:12px;color:var(--m);margin-top:6px">Hex</div>
+      <div id="hex" style="font-family:monospace;font-size:13px">0x0</div>
+      <div id="warns"></div>
+      <div style="margin-top:10px"><div style="font-size:11px;color:var(--ok);margin-bottom:4px">ALLOWED</div><div id="allowed"></div></div>
+      <div style="margin-top:8px"><div style="font-size:11px;color:var(--m);margin-bottom:4px">DENIED / NEUTRAL</div><div id="denied"></div></div>
+    </div>
+    <div class="card"><h3>Export</h3>
+      <div class="btnrow"><button class="btn" id="copy">Copy JSON</button><button class="btn ghost" id="mail">📬 Send to Mail</button></div>
+      <pre class="out" id="out"></pre>
+    </div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+// Discord permission bits (BigInt — some exceed 32 bits).
+const PERMS = [
+  ['General',['Administrator','0x8'],['View Audit Log','0x80'],['View Guild Insights','0x80000'],['Manage Guild','0x20'],['Manage Roles','0x10000000'],['Manage Channels','0x10'],['Manage Webhooks','0x20000000'],['Manage Emojis','0x40000000'],['Manage Events','0x200000000']],
+  ['Messaging',['View Channel','0x400'],['Send Messages','0x800'],['Send TTS Messages','0x1000'],['Manage Messages','0x2000'],['Embed Links','0x4000'],['Attach Files','0x8000'],['Read History','0x10000'],['Mention Everyone','0x20000'],['Use External Emojis','0x40000'],['Manage Threads','0x400000000'],['Create Public Threads','0x800000000'],['Create Private Threads','0x1000000000'],['Send in Threads','0x4000000000']],
+  ['Moderation',['Kick Members','0x2'],['Ban Members','0x4'],['Timeout Members','0x10000000000'],['Manage Nicknames','0x8000000'],['Change Nickname','0x4000000']],
+  ['Voice',['Connect','0x100000'],['Speak','0x200000'],['Stream','0x200'],['Mute Members','0x400000'],['Deafen Members','0x800000'],['Move Members','0x1000000'],['Use VAD','0x2000000'],['Priority Speaker','0x100'],['Request to Speak','0x100000000']],
+];
+const BIT = {}; PERMS.forEach(([g,...ps]) => ps.forEach(([n,b]) => BIT[n] = BigInt(b)));
+const base = new Set(['View Channel','Read History']);
+const over = {}; // name -> 'allow' | 'deny'
+const PRESETS = {
+  mod: ['View Channel','Send Messages','Embed Links','Attach Files','Read History','Manage Messages','Kick Members','Ban Members','Timeout Members','View Audit Log','Mention Everyone','Manage Threads','Send in Threads'],
+  helper: ['View Channel','Send Messages','Embed Links','Attach Files','Read History','Manage Messages','Timeout Members'],
+  muted: ['View Channel','Read History'],
+  readonly: ['View Channel','Read History'],
+  clear: [],
+};
+function renderBase(){
+  $('base').innerHTML = PERMS.map(([g,...ps]) => '<div class="grp"><h4>'+g+'</h4>' + ps.map(([n]) =>
+    '<label class="perm"><input type="checkbox" data-p="'+n+'" '+(base.has(n)?'checked':'')+'/> '+n+'<span class="bit">'+BIT[n].toString(16)+'</span></label>').join('') + '</div>').join('');
+  document.querySelectorAll('#base input').forEach(i => i.onchange = () => { i.checked ? base.add(i.dataset.p) : base.delete(i.dataset.p); render(); });
+  document.querySelectorAll('[data-preset]').forEach(p => p.onclick = () => { base.clear(); PRESETS[p.dataset.preset].forEach(x => base.add(x)); render(); });
+}
+function renderOver(){
+  const all = Object.keys(BIT);
+  $('over').innerHTML = all.map(n => {
+    const s = over[n] || 'neutral';
+    return '<div class="perm"><span style="flex:1">'+n+'</span><div class="tri"><button data-n="'+n+'" data-v="allow" class="'+(s==='allow'?'on-allow':'')+'">Allow</button><button data-n="'+n+'" data-v="deny" class="'+(s==='deny'?'on-deny':'')+'">Deny</button></div></div>';
+  }).join('');
+  document.querySelectorAll('#over button').forEach(b => b.onclick = () => {
+    const n = b.dataset.n, v = b.dataset.v;
+    over[n] = (over[n] === v) ? undefined : v;
+    if (!over[n]) delete over[n];
+    render();
+  });
+}
+function effective(){
+  let b = 0n; base.forEach(n => b |= BIT[n]);
+  if (base.has('Administrator')) return { bits: b, admin: true, allowed: Object.keys(BIT), denied: [] };
+  let allow = 0n, deny = 0n;
+  Object.entries(over).forEach(([n,v]) => { if (v === 'allow') allow |= BIT[n]; if (v === 'deny') deny |= BIT[n]; });
+  const bits = (b | allow) & ~deny;
+  const allowed = Object.keys(BIT).filter(n => (bits & BIT[n]) !== 0n);
+  const denied = Object.keys(BIT).filter(n => (bits & BIT[n]) === 0n);
+  return { bits, admin: false, allowed, denied };
+}
+function render(){
+  renderBase(); renderOver();
+  const e = effective();
+  $('dec').textContent = e.bits.toString();
+  $('hex').textContent = '0x' + e.bits.toString(16);
+  const w = [];
+  if (e.admin) w.push('⚠️ <b>Administrator</b> bypasses ALL channel overwrites — the simulator is ignored.');
+  if (e.allowed.includes('Mention Everyone') && e.allowed.includes('Manage Messages')) w.push('⚠️ Can mass-ping + delete — restrict <b>Mention Everyone</b>.');
+  if ((e.allowed.includes('Ban Members') || e.allowed.includes('Kick Members')) && !e.allowed.includes('View Audit Log')) w.push('⚠️ Can ban/kick but not see the audit log.');
+  if (e.allowed.includes('Manage Webhooks') && e.allowed.includes('Manage Channels')) w.push('⚠️ Webhooks + channels = server takeover risk if compromised.');
+  if (e.allowed.includes('Administrator') && e.allowed.length > 1) w.push('⚠️ Administrator already grants everything — other ticks are redundant.');
+  if (!e.allowed.includes('View Channel')) w.push('⛔ Cannot see the channel — all other grants are moot here.');
+  $('warns').innerHTML = w.map(x => '<div class="warn">'+x+'</div>').join('');
+  $('allowed').innerHTML = e.allowed.map(n => '<span class="chip">'+n+'</span>').join('') || '<span style="font-size:12px;color:var(--m)">Nothing allowed</span>';
+  $('denied').innerHTML = (e.denied||[]).slice(0,24).map(n => '<span class="chip">'+n+'</span>').join('') + ((e.denied||[]).length > 24 ? ' <span class="chip">+'+(e.denied.length-24)+' more</span>' : '');
+  $('out').textContent = JSON.stringify({ tool: 'permission-calc', version: 1, exported_at: new Date().toISOString(), base: [...base], overwrites: over, effective_decimal: e.bits.toString(), effective_hex: '0x'+e.bits.toString(16), warnings: w.map(x => x.replace(/<[^>]+>/g,'')) }, null, 2);
+}
+$('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent); $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy JSON',1200); };
+$('mail').onclick = async () => {
+  const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ server:'staff', type:'ticket', title:'Perm review for approval', content:$('out').textContent.slice(0,8000), author:'you', by:'permission-calc', src:'discord' }) });
+  alert(r.ok ? 'Mailed to mod inbox ✓' : 'Mail API offline — run wrangler dev');
+};
+render();
+</script>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
+</body>
+</html>
