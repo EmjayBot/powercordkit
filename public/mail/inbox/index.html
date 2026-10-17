@@ -77,8 +77,52 @@ let data = [], sel = null, fS = 'all', fT = 'all', fStatus = 'open', serversCach
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-// Render a safe subset of Discord markdown: bold/italic/underline/strike,
-// spoiler, inline code, code blocks, blockquotes, headings, and links.
+// Render tool exports (JSON with a `tool` field, mailed from the labs)
+// as structured cards instead of raw text. Falls back to markdown.
+function toolCard(raw) {
+  let o = null;
+  try { o = JSON.parse(raw); } catch { return md(raw); }
+  if (!o || typeof o !== 'object' || !o.tool) return md(raw);
+  const chip = (t) => '<span class="badge">' + esc(t) + '</span>';
+  const row = (k, v) => '<div style="display:flex;gap:8px;font-size:12px;padding:5px 0;border-bottom:1px solid #26262b"><span style="color:var(--m);min-width:110px">' + esc(k) + '</span><span>' + v + '</span></div>';
+  const list = (items) => (items || []).map((x) => chip(x)).join(' ') || '<span style="color:var(--m)">—</span>';
+  if (o.tool === 'permission-calc') {
+    return chip('permissions') + ' ' + chip('decimal ' + (o.effective_decimal || '?')) + ' ' + chip('hex ' + (o.effective_hex || '?')) +
+      '<div style="margin-top:8px">' + row('Base', list(o.base)) + row('Overwrites', esc(JSON.stringify(o.overwrites || {}))) + '</div>' +
+      ((o.warnings || []).length ? '<div style="margin-top:8px">' + o.warnings.map((w) => '<div style="font-size:12px;color:#fee75c">⚠️ ' + esc(w) + '</div>').join('') + '</div>' : '') +
+      '<div style="margin-top:8px;font-size:11px;color:var(--m)">Apply: paste the decimal into your bot config or role editor, then re-check warnings. Full JSON below.</div>' +
+      '<pre style="font-size:11px;background:#111;padding:8px;border-radius:6px;overflow:auto;margin-top:8px">' + esc(raw.slice(0, 4000)) + '</pre>';
+  }
+  if (o.tool === 'lockdown-plan' || o.tool === 'slowmode-planner') {
+    const ch = o.channels || [];
+    return chip(o.tool === 'lockdown-plan' ? 'lockdown' : 'slowmode') + ' <span style="font-size:12px;color:var(--m)">' + ch.length + ' channels</span>' +
+      '<div style="margin-top:8px">' + ch.map((c) => '<div style="font-size:12px;padding:6px 8px;background:#1e1e22;border:1px solid #26262b;border-radius:8px;margin-bottom:6px"><b>' + esc(c.channel || c.name || '?') + '</b> — ' + esc(c.mode || (c.slowmode_seconds ? c.slowmode_seconds + 's' : 'open')) + (c.slowmode_seconds ? ' (' + esc(String(c.slowmode_seconds)) + 's)' : '') + (c.deny_everyone ? ' <span style="color:var(--m)">deny: ' + esc((c.deny_everyone || []).join(', ')) + '</span>' : '') + (c.schedule || c.schedule_note ? '<br><span style="color:var(--m)">' + esc(c.schedule || c.schedule_note) + '</span>' : '') + '</div>').join('') + '</div>' +
+      '<div style="margin-top:8px;font-size:11px;color:var(--m)">Apply: set each slowmode in channel settings, add the @everyone overwrites, exempt ' + esc((o.exempt_roles || []).join(', ') || 'mods') + '.</div>';
+  }
+  if (o.tool === 'giveaway-roller') {
+    return chip('giveaway') + ' <span style="font-size:12px;color:var(--m)">seed ' + esc(String(o.seed || '')) + '</span>' +
+      '<div style="margin-top:8px">' + (o.winners || []).map((w, i) => '<div style="font-size:13px;padding:6px 8px;background:rgba(59,165,93,.1);border:1px solid rgba(59,165,93,.4);border-radius:8px;margin-bottom:6px">🏆 #' + (i + 1) + ' — ' + esc(w) + '</div>').join('') + '</div>' +
+      '<div style="font-size:11px;color:var(--m)">Verify: SHA-256 <code>' + esc(String(o.seed_hash || '').slice(0, 16)) + '…</code> — re-run the /giveaways/ roll with the same seed + entrants.</div>';
+  }
+  if (o.tool === 'automod-tester') {
+    return chip('automod') + ' <b style="font-size:13px">' + (o.verdict === 'block' ? '⛔ BLOCKED' : '✅ PASS') + '</b>' +
+      '<div style="margin-top:8px;font-size:12px">' + esc((o.message || '').slice(0, 300)) + '</div>' +
+      '<div style="margin-top:8px">' + row('Keywords', esc((o.keywords || []).join(', ') || '—')) + row('Regex', esc((o.regex || []).join(' | ') || '—')) + '</div>' +
+      '<div style="margin-top:8px;font-size:11px;color:var(--m)">Apply: add the keywords/regex to Server Settings → AutoMod → Keyword filter.</div>';
+  }
+  if (o.tool === 'slowmode-plan') {
+    return chip('slowmode') + '<div style="margin-top:8px;font-size:12px">' + esc(raw.slice(0, 800)) + '</div>';
+  }
+  if (o.embeds && Array.isArray(o.embeds) && o.embeds[0]) {
+    const e = o.embeds[0];
+    return chip('embed') + '<div style="margin-top:8px;background:#2b2d31;border-left:4px solid #5865F2;border-radius:8px;padding:10px 12px">' +
+      (e.title ? '<div style="font-weight:700">' + esc(e.title) + '</div>' : '') +
+      (e.description ? '<div style="font-size:12.5px;color:#dbdee1;white-space:pre-wrap;margin-top:4px">' + esc(e.description) + '</div>' : '') +
+      ((e.fields || []).map((f) => '<div style="font-size:12px;margin-top:6px"><b>' + esc(f.name) + '</b><br><span style="color:#dbdee1">' + esc(f.value) + '</span></div>').join('')) +
+      '</div><div style="margin-top:8px;font-size:11px;color:var(--m)">Apply: copy the JSON (Copy JSON button in the tool) into your bot or a webhook payload.</div>';
+  }
+  return md(raw);
+}
 function md(input) {
   let out = esc(input || '');
   const blocks = [];
@@ -228,7 +272,7 @@ function select(id) {
     '</div>' +
     '<div class="content">' +
       '<h2 style="font-size:18px;margin:0 0 10px 0">' + esc(sel.title) + '</h2>' +
-      '<div class="box">' + md(sel.content) + '</div>' +
+      '<div class="box">' + toolCard(sel.content) + '</div>' +
       '<div id="notes">' + (sel.notes || []).map((n) => '<div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #26262b"><div class="av" style="width:22px;height:22px">' + esc((n.by || '?')[0]) + '</div><div><b style="font-size:12px">' + esc(n.by) + '</b><div style="font-size:13px">' + esc(n.text) + '</div></div></div>').join('') + '</div>' +
       '<div style="display:flex;gap:8px;margin-top:10px"><input class="search" id="note-inp" placeholder="Add private note…" /><button class="abtn prim" id="note-btn">Add</button></div>' +
       '<div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px">' +
