@@ -152,14 +152,18 @@ const bp = base === '/' ? '' : base.slice(0, -1);
 
 // Tools-specific shell config for the copied pages (site.js reads it), so the
 // header/links/accent stay customizable here without rebuild of the source.
+// Preserves the full feature flags (sections + per-lab) so Mail buttons and
+// cards stay hidden when their suite is off — not just mailSetup.
 const rebased = (href) => (!href || href.startsWith('#') || /^https?:/.test(href) ? href : bp + href);
+const labsOut = {};
+for (const lab of ALL_LABS) labsOut[lab] = !labsOff.includes(lab);
 writeFileSync(
   join(out, 'site.config.json'),
   JSON.stringify(
     {
       siteName: identity.siteName,
       accent: identity.accent,
-      features: { mailSetup: showSetup },
+      features: { tools: showTools, inbox: showInbox, modtools: showModtools, ideas: showIdeas, roadmap: showRoadmap, mailSetup: showSetup, labs: labsOut },
       header: {
         brand,
         logo,
