@@ -4,7 +4,7 @@
   "tagline": "11 tools for Discord mods — no account, no backend, works offline.",
   "accent": "#5865F2",
   "baseUrl": "/",
-  "features": { "mailSetup": false, "tools": true, "inbox": false, "modtools": false, "ideas": false, "roadmap": false },
+  "features": { "mailSetup": false, "tools": true, "inbox": false, "modtools": false, "ideas": false, "roadmap": false, "labs": { "embeds": true, "color": true, "markdown": true, "timestamp": true, "snowflake": true, "webhook": true, "slowmode": true, "permissions": true, "lockdown": true, "giveaways": true, "automod": true } },
   "header": {
     "brand": "Community Toolset",
     "logo": "/assets/powercordkit_logo.png",

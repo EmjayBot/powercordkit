@@ -40,7 +40,12 @@ Goal: help a user **self-host the Mail inbox** end to end.
       "header": { "brand": "MyCommunity Tools", "links": [ { "label": "Home", "href": "https://mine.example" } ] }
     }
     ```
-    `features.tools` shows/hides the Labs hub, `features.inbox` the Community Inbox (nav + hub), `features.modtools` the Mod Tools. `mailSetup: false` turns the setup guide off once you're set up (link, hub card, and the guide page itself).
+    `features.tools` shows/hides the Labs hub, `features.inbox` the Community Inbox (nav + hub), `features.modtools` the Command console, `features.ideas` / `features.roadmap` the Ideas / Roadmap cards. `mailSetup: false` turns the setup guide off once you're set up (link, hub card, and the guide page itself).
+    Per-lab: `features.labs.{embeds,color,markdown,timestamp,snowflake,webhook,slowmode,permissions,lockdown,giveaways,automod}` hides individual tool cards + nav links. Presets:
+    - tools-only: `{tools:true, inbox:false, modtools:false, ideas:false, roadmap:false}`
+    - everything: all `true`
+    - command-only: `{tools:false, inbox:false, modtools:true}`
+    The same flags prune the static build (`scripts/build-tools.mjs` drops disabled routes from `dist/tools`).
   - Per-deployment branding: add `"environments": { "personal": { "siteName": "PowerCordKit", "header": { "brand": "PowerCordKit" } } }`. The shell reads `ENVIRONMENT` from `/api/health` and merges the matching block, so one shared `public/` can brand each deployment differently.
 - **`PUBLIC_ROADMAP`** (wrangler var, default `1`): set to `0` to make `GET /api/roadmap` require login (private roadmap). The `/roadmap/` page then shows a log-in prompt.
 - **`DEFAULT_SERVER`**, **`FEED_MAP`**, **`POLL_DEBUG`** (wrangler vars) — see below.

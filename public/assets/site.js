@@ -44,6 +44,11 @@
     injectCss();
     var h = cfg.header || {};
     var feats = cfg.features || {};
+    var labs = (feats.labs && typeof feats.labs === 'object') ? feats.labs : {};
+    var labOff = function (href) {
+      var m = String(href || '').match(/^\/([a-z0-9-]+)\/$/);
+      return !!(m && labs[m[1]] === false);
+    };
     var brand = h.brand || cfg.siteName || 'Community';
     var logo = h.logo || '/assets/powercordkit_logo.png';
     var home = h.home || '/';
@@ -54,6 +59,7 @@
       if (feats.modtools === false && String(l.href).indexOf('/modtools/') === 0) return false;
       if (feats.ideas === false && String(l.href).indexOf('/ideas/') === 0) return false;
       if (feats.roadmap === false && String(l.href).indexOf('/roadmap/') === 0) return false;
+      if (labOff(l.href)) return false;
       if (window.__pckRoadmapPrivate && /roadmap/.test(String(l.href))) return false;
       return true;
     });
@@ -96,10 +102,25 @@
       foot.innerHTML = '<a href="' + esc(credit) + '" target="_blank" rel="noopener"><img src="' + esc(logo) + '" alt="" />' + esc(cfg.footerNote || 'Powered by PowerCordKit') + '</a>' + gh;
     }
     Object.keys(feats).forEach(function (k) {
+      if (k === 'labs') return;
       if (feats[k] === false) {
         var els = document.querySelectorAll('[data-pck-feature="' + k + '"]');
         for (var i = 0; i < els.length; i++) els[i].style.display = 'none';
       }
+    });
+    Object.keys(labs).forEach(function (lab) {
+      if (labs[lab] === false) {
+        var els = document.querySelectorAll('[data-pck-lab="' + lab + '"]');
+        for (var i = 0; i < els.length; i++) els[i].style.display = 'none';
+      }
+    });
+    // Hide sections whose cards were all turned off (e.g. tools-only site
+    // hides the whole inbox block when inbox+ideas+roadmap are off).
+    Array.prototype.forEach.call(document.querySelectorAll('.sec'), function (sec) {
+      var cards = sec.querySelectorAll('.card');
+      if (!cards.length) return;
+      var visible = Array.prototype.some.call(cards, function (c) { return c.style.display !== 'none'; });
+      if (!visible) sec.style.display = 'none';
     });
     // Environment-gated sections: only shown on the matching deployment (e.g. personal).
     if (window.__pckEnv) {

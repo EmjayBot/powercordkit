@@ -46,11 +46,26 @@ for (const l of links) {
   }
 }
 // Tools-only site: drop nav links to routes that don't exist here, and to the
-// setup guide when that feature is turned off.
+// setup guide when that feature is turned off. Respects features.inbox,
+// features.ideas, features.roadmap, features.modtools and features.labs.
 const features = identity.features && typeof identity.features === 'object' ? identity.features : {};
 const showSetup = features.mailSetup !== false;
-const PRUNED = ['/mail/', '/tickets/', '/ideas/'];
+const showTools = features.tools !== false;
+const showInbox = features.inbox !== false;
+const showIdeas = features.ideas !== false;
+const showRoadmap = features.roadmap !== false;
+const showModtools = features.modtools !== false;
+// Canonical lab slugs (must match public/<slug>/ folders + data-pck-lab).
+const ALL_LABS = ['embeds','color','markdown','timestamp','snowflake','webhook','slowmode','permissions','lockdown','giveaways','automod'];
+const labsOff = features.labs && typeof features.labs === 'object' ? Object.keys(features.labs).filter((k) => features.labs[k] === false) : [];
+if (!showTools) for (const lab of ALL_LABS) if (!labsOff.includes(lab)) labsOff.push(lab);
+const PRUNED = [];
+if (!showInbox) PRUNED.push('/mail/', '/tickets/');
+if (!showIdeas) PRUNED.push('/ideas/');
+if (!showRoadmap) PRUNED.push('/roadmap/');
+if (!showModtools) PRUNED.push('/modtools/');
 if (!showSetup) PRUNED.push('/mail-setup/');
+for (const lab of labsOff) PRUNED.push('/' + lab + '/');
 const toolLinks = links.filter((l) => !PRUNED.some((p) => l.href === p || l.href.startsWith(p)));
 let base = identity.baseUrl;
 if (!base.startsWith('/')) {
@@ -60,7 +75,13 @@ if (!base.startsWith('/')) {
 if (!base.endsWith('/')) base += '/';
 
 // Backend-dependent pages excluded from the tools-only site.
-const PRUNE = ['mail', 'tickets', 'ideas'];
+// Respects the same feature flags as the nav above.
+const PRUNE = [];
+if (!showInbox) PRUNE.push('mail', 'tickets');
+if (!showIdeas) PRUNE.push('ideas');
+if (!showRoadmap) PRUNE.push('roadmap');
+if (!showModtools) PRUNE.push('modtools');
+for (const lab of labsOff) PRUNE.push(lab);
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
@@ -87,10 +108,14 @@ if (!labsRaw.includes('/embeds/')) {
 }
 // One unified grid: strip the showcase wrapper, drop " Lab" from card
 // titles ("Embed Lab" → "Embed"), append the setup card. Showcase untouched.
-const labs = labsRaw
+// Disabled labs (features.labs.<slug> === false) are removed here too.
+let labs = labsRaw
   .replace(/^\s*<div class="grid">/, '')
   .replace(/<\/div>\s*$/, '')
   .replace(/ Lab<\/h3>/g, '</h3>');
+for (const lab of labsOff) {
+  labs = labs.replace(new RegExp('<a class="card" href="/' + lab + '/"[\\s\\S]*?</a>', 'g'), '');
+}
 const escAttr = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const hub = `<!DOCTYPE html>
 <html lang="en">
