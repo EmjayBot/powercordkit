@@ -238,7 +238,7 @@ write is audited and rate-limited):
 |---|---|---|
 | Bans | `POST/GET /api/bans` · `POST /api/bans/:id/unban` | `PUT/DELETE /guilds/{g}/bans/{u}` (parallel, retry); `POST /admin/users/{id}/suspend` on Discourse; temp `duration_minutes` auto-unbans via cron expiry |
 | Timeouts | `POST/GET /api/timeouts` · `POST /api/timeouts/:id/remove` | `PATCH /guilds/{g}/members/{u}` `communication_disabled_until`; cron expires + deactivates (every 2 min on community, daily on personal) |
-| Apply (bot) | `POST /api/apply/slowmode` · `POST /api/apply/lockdown` | One-click apply behind the Slowmode/Lockdown planners: needs channel IDs + `MOD_TOOL_SERVERS` slug; slowmode sets `rate_limit_per_user`, lockdown sets @everyone overwrites + exempt-role allows; audited + mailed to inbox |
+| Apply (bot) | `POST /api/apply/slowmode` · `POST /api/apply/lockdown` | Apply lives on the **inbox card**, not the public planner: planners mail the plan (with server + channel IDs), mods hit ⚡ Apply via bot on the card; slowmode sets `rate_limit_per_user`, lockdown sets @everyone overwrites + exempt-role allows; audited + mailed to inbox |
 | Infractions | `POST/GET /api/infractions` · `GET /api/infractions/:user/timeline` | Adds warnings; timeline merges bans/timeouts/infractions/appeals/**notes**; evidence `mail_item_id` links to inbox |
 | Appeals | `POST /hooks/appeal` (public) · `GET /api/appeals` · `POST /api/appeals/:id/approve|deny` | Public form (ban must belong to user, 1 per ban/24h + 5/hr per IP, honeypot, IP *hash*); creates a Mail item `type=appeal`; Approve triggers full unban (Discord + Discourse) |
 | Notes | `POST/GET /api/user-notes` · `GET /api/user-notes/:user` | Per-user private notes surfaced in Mail detail + timeline + Notes tab (`/modtools/`) |

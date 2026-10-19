@@ -37,48 +37,35 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
   <div>
     <div class="card"><h3>Channels <button class="btn ghost" id="add" style="float:right;padding:5px 10px">+ Add</button></h3>
       <div style="margin-bottom:10px"><span class="preset" data-p="5">Calm 5s</span><span class="preset" data-p="10">Night 10s</span><span class="preset" data-p="30">Raid 30s</span><span class="preset" data-p="60">Lockdown 60s</span><span class="preset" data-p="0">Off</span></div>
-      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><label style="font-size:12px;color:var(--m)">Server</label><select class="inp" id="server" style="max-width:220px"><option value="">(loading…)</option></select></div>
-      <table><thead><tr><th>Channel</th><th>Channel ID (bot apply)</th><th>Slowmode (s)</th><th>Schedule / note</th><th></th></tr></thead><tbody id="rows"></tbody></table>
-      <div class="hint" style="margin-top:10px">Discord allows 0–21600s. Click a preset to apply it to <b>all</b> channels, or edit rows individually. Channel IDs (right-click channel → Copy ID, Developer Mode on) are only needed for <b>Apply via bot</b>.</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><label style="font-size:12px;color:var(--m)">Server</label><select class="inp" id="server" style="max-width:220px"><option value="">(mods: log in to load)</option></select></div>
+      <table><thead><tr><th>Channel</th><th>Channel ID (for inbox apply)</th><th>Slowmode (s)</th><th>Schedule / note</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+      <div class="hint" style="margin-top:10px">Discord allows 0–21600s. Click a preset to apply it to <b>all</b> channels, or edit rows individually. Channel IDs (right-click channel → Copy ID, Developer Mode on) let mods apply the plan from the inbox card.</div>
     </div>
     <div class="card"><h3>Night schedule preview</h3><div class="timeline" id="tl"></div></div>
   </div>
   <div>
     <div class="card"><h3>Bot config export</h3>
       <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" data-pck-feature="inbox" style="flex:1">📬 Mail plan</button></div>
-      <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="apply" style="flex:1;background:#3ba55d">⚡ Apply via bot</button></div>
-      <div class="hint" id="apply-msg" style="margin-bottom:8px"></div>
       <pre class="out" id="out"></pre>
-      <div class="hint">Hand this JSON to your bot dev, or mail it to the mod inbox as a ticket for review.</div>
+      <div class="hint">Hand this JSON to your bot dev, or mail it to the mod inbox — mods apply it from the inbox card.</div>
     </div>
-    <div class="card"><h3>How to apply this</h3><div class="hint">1. <b>Apply via bot</b> (needs IDs): pick the server, paste each <b>Channel ID</b> (Developer Mode → right-click channel → Copy ID), then ⚡ Apply via bot — the Worker sets slowmode directly and logs it to the inbox. 2. <b>Manual</b>: right-click → Edit Channel → Overview → set <b>Slowmode</b> to the seconds shown. 3. Copy JSON goes to your bot dev, 📬 Mail plan files it for review.</div></div>
+    <div class="card"><h3>How to apply this</h3><div class="hint">1. Fill in <b>Server</b> + <b>Channel IDs</b> so the plan is actionable. 2. 📬 Mail plan — mods open the inbox card and hit <b>⚡ Apply via bot</b> (bot needs Manage Channels; every apply is audited + logged). 3. <b>Manual</b>: right-click → Edit Channel → Overview → set <b>Slowmode</b> to the seconds shown.</div></div>
   </div>
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
-async function api(path, opts) {
-  opts = opts || {};
-  const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
-  let r = await fetch(path, Object.assign({}, opts, { headers }));
-  if (r.status === 401) {
-    let info = {};
-    try { info = await r.clone().json(); } catch (e) {}
-    if (info.login) { window.location.href = '/api/auth/login'; return r; }
-    if (info.error === 'Mod key required') {
-      const k = prompt('Mod key required:');
-      if (k) { sessionStorage.setItem('pck-mod-key', k); headers['X-Mod-Key'] = k; r = await fetch(path, Object.assign({}, opts, { headers })); }
-    }
-  }
-  return r;
-}
+// Server list is mod-gated: silent fetch, no login prompt on the public page.
+// Mods who are logged in get the dropdown; everyone else mails the plan.
 async function loadServers() {
   try {
-    const r = await api('/api/modtools/servers');
+    const headers = {};
+    try { const k = sessionStorage.getItem('pck-mod-key'); if (k) headers['X-Mod-Key'] = k; } catch {}
+    const r = await fetch('/api/modtools/servers', { headers });
     if (!r.ok) return;
     const j = await r.json();
     const list = (Array.isArray(j.servers) ? j.servers : []).filter((s) => s !== 'discourse');
-    $('server').innerHTML = list.length ? list.map((s) => '<option>' + s.replace(/</g,'&lt;') + '</option>').join('') : '<option value="">(no servers — check MOD_TOOL_SERVERS)</option>';
-  } catch { $('server').innerHTML = '<option value="">(offline)</option>'; }
+    if (list.length) $('server').innerHTML = list.map((s) => '<option>' + s.replace(/</g,'&lt;') + '</option>').join('');
+  } catch { /* public page stays usable without the list */ }
 }
 loadServers();
 let rows = [
@@ -113,21 +100,7 @@ $('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent);
 $('mail').onclick = async () => {
   const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ server:'staff', type:'ticket', title:'Slowmode plan for review', content:$('out').textContent.slice(0,8000), author:'you', by:'slowmode-planner', src:'discord' }) });
-  alert(r.ok ? 'Mailed to mod inbox ✓' : 'Mail API offline — run wrangler dev');
-};
-$('apply').onclick = async () => {
-  const server = $('server').value;
-  if (!server) return alert('Pick a server first (needs MOD_TOOL_SERVERS)');
-  const missing = rows.filter((r) => !/^\d{10,}$/.test(String(r.id || '').trim()));
-  if (missing.length) return alert('Every row needs a channel ID for bot apply (right-click channel → Copy ID). ' + missing.length + ' missing.');
-  if (!confirm('Apply slowmode to ' + rows.length + ' channel(s) on "' + server + '" via the bot?')) return;
-  $('apply-msg').textContent = 'Applying…';
-  const r = await api('/api/apply/slowmode', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ server, channels: rows.map((x) => ({ channel_id: String(x.id).trim(), slowmode_seconds: x.s, note: x.note || '' })) }) });
-  let j = {};
-  try { j = await r.json(); } catch {}
-  $('apply-msg').textContent = r.ok ? 'Applied ✓ — logged to the inbox.' : ('Failed: ' + (j.error || r.status));
-  alert(r.ok ? JSON.stringify(j.results || j, null, 2).slice(0, 2000) : ('Apply failed: ' + (j.error || r.status)));
+  alert(r.ok ? 'Mailed to mod inbox ✓ (mods apply it from the card)' : 'Mail API offline — run wrangler dev');
 };
 render();
 </script>

@@ -34,9 +34,9 @@ ol.steps{font-size:13px;line-height:1.7;color:#d6d6da;margin:8px 0 0 18px;paddin
   <div>
     <div class="card"><h3>Channels <button class="btn ghost" id="add" style="float:right;padding:5px 10px">+ Add</button></h3>
       <div style="margin-bottom:10px"><span class="preset" data-p="open">Calm / open</span><span class="preset" data-p="slow">Raid 30s</span><span class="preset" data-p="readonly">Read-only</span><span class="preset" data-p="locked">Full lockdown</span></div>
-      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><label style="font-size:12px;color:var(--m)">Server</label><select class="inp" id="server" style="max-width:220px"><option value="">(loading…)</option></select></div>
-      <table><thead><tr><th>Channel</th><th>Channel ID (bot apply)</th><th>Mode</th><th>Slowmode (s)</th><th>Note</th><th></th></tr></thead><tbody id="rows"></tbody></table>
-      <div class="hint" style="margin-top:10px">Modes map to <b>@everyone overwrites</b>: readonly denies <code>SendMessages</code>, locked also denies <code>AddReactions</code> + threads. Exempt roles keep sending. Channel IDs (right-click → Copy ID, Developer Mode on) are only needed for <b>Apply via bot</b>.</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><label style="font-size:12px;color:var(--m)">Server</label><select class="inp" id="server" style="max-width:220px"><option value="">(mods: log in to load)</option></select></div>
+      <table><thead><tr><th>Channel</th><th>Channel ID (for inbox apply)</th><th>Mode</th><th>Slowmode (s)</th><th>Note</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+      <div class="hint" style="margin-top:10px">Modes map to <b>@everyone overwrites</b>: readonly denies <code>SendMessages</code>, locked also denies <code>AddReactions</code> + threads. Exempt roles keep sending. Channel IDs (right-click → Copy ID, Developer Mode on) let mods apply the plan from the inbox card.</div>
     </div>
     <div class="card"><h3>Exempt roles (keep talking)</h3>
       <input class="inp" id="exempt" value="Mods, Helpers" placeholder="Comma-separated role names" />
@@ -50,40 +50,26 @@ ol.steps{font-size:13px;line-height:1.7;color:#d6d6da;margin:8px 0 0 18px;paddin
     </div>
     <div class="card"><h3>Bot config export</h3>
       <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" data-pck-feature="inbox" style="flex:1">📬 Mail plan</button></div>
-      <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="apply" style="flex:1;background:#3ba55d">⚡ Apply via bot</button></div>
-      <div class="hint" id="apply-msg" style="margin-bottom:8px"></div>
       <pre class="out" id="out"></pre>
     </div>
     <div class="card"><h3>How to apply this</h3>
-      <div class="hint">1. <b>Apply via bot</b> (needs IDs): pick the server, paste each <b>Channel ID</b> (Developer Mode → right-click → Copy ID), list exempt role <b>names</b>, then ⚡ Apply via bot — the Worker sets slowmode + @everyone overwrites, re-allows exempt roles, and logs it to the inbox. Bot needs <b>Manage Channels</b>. 2. <b>Manual</b>: per channel Edit Channel → Overview → Slowmode; Permissions → @everyone → <b>deny</b> each permission under <code>deny_everyone</code>; re-allow your mod roles. 3. Post a notice in #announcements.</div>
+      <div class="hint">1. Fill in <b>Server</b> + <b>Channel IDs</b> + exempt role names. 2. 📬 Mail plan — mods open the inbox card and hit <b>⚡ Apply via bot</b> (sets slowmode + @everyone overwrites, re-allows exempt roles; bot needs <b>Manage Channels</b>; every apply is audited + logged). 3. <b>Manual</b>: per channel Edit Channel → Overview → Slowmode; Permissions → @everyone → <b>deny</b> each permission under <code>deny_everyone</code>; re-allow your mod roles. 4. Post a notice in #announcements.</div>
     </div>
   </div>
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
-async function api(path, opts) {
-  opts = opts || {};
-  const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
-  let r = await fetch(path, Object.assign({}, opts, { headers }));
-  if (r.status === 401) {
-    let info = {};
-    try { info = await r.clone().json(); } catch (e) {}
-    if (info.login) { window.location.href = '/api/auth/login'; return r; }
-    if (info.error === 'Mod key required') {
-      const k = prompt('Mod key required:');
-      if (k) { sessionStorage.setItem('pck-mod-key', k); headers['X-Mod-Key'] = k; r = await fetch(path, Object.assign({}, opts, { headers })); }
-    }
-  }
-  return r;
-}
+// Server list is mod-gated: silent fetch, no login prompt on the public page.
 async function loadServers() {
   try {
-    const r = await api('/api/modtools/servers');
+    const headers = {};
+    try { const k = sessionStorage.getItem('pck-mod-key'); if (k) headers['X-Mod-Key'] = k; } catch {}
+    const r = await fetch('/api/modtools/servers', { headers });
     if (!r.ok) return;
     const j = await r.json();
     const list = (Array.isArray(j.servers) ? j.servers : []).filter((s) => s !== 'discourse');
-    $('server').innerHTML = list.length ? list.map((s) => '<option>' + s.replace(/</g,'&lt;') + '</option>').join('') : '<option value="">(no servers — check MOD_TOOL_SERVERS)</option>';
-  } catch { $('server').innerHTML = '<option value="">(offline)</option>'; }
+    if (list.length) $('server').innerHTML = list.map((s) => '<option>' + s.replace(/</g,'&lt;') + '</option>').join('');
+  } catch { /* public page stays usable without the list */ }
 }
 loadServers();
 const MODES = {
@@ -127,22 +113,7 @@ $('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent);
 $('mail').onclick = async () => {
   const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ server:'staff', type:'ticket', title:'Lockdown plan for review', content:$('out').textContent.slice(0,8000), author:'you', by:'lockdown-planner', src:'discord' }) });
-  alert(r.ok ? 'Mailed to mod inbox ✓' : 'Mail API offline — run wrangler dev');
-};
-$('apply').onclick = async () => {
-  const server = $('server').value;
-  if (!server) return alert('Pick a server first (needs MOD_TOOL_SERVERS)');
-  const missing = rows.filter((r) => !/^\d{10,}$/.test(String(r.id || '').trim()));
-  if (missing.length) return alert('Every row needs a channel ID for bot apply (right-click channel → Copy ID). ' + missing.length + ' missing.');
-  if (!confirm('Apply ' + rows.map((r) => r.mode).join('/') + ' to ' + rows.length + ' channel(s) on "' + server + '" via the bot? Overwrites @everyone.')) return;
-  $('apply-msg').textContent = 'Applying…';
-  const exempt = $('exempt').value.split(',').map((s) => s.trim()).filter(Boolean);
-  const r = await api('/api/apply/lockdown', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ server, exempt_roles: exempt, channels: rows.map((x) => ({ channel_id: String(x.id).trim(), mode: x.mode, slowmode_seconds: x.s, note: x.note || '' })) }) });
-  let j = {};
-  try { j = await r.json(); } catch {}
-  $('apply-msg').textContent = r.ok ? 'Applied ✓ — logged to the inbox.' + (j.exempt_resolved ? ' Exempt matched: ' + j.exempt_resolved.join(', ') : '') : ('Failed: ' + (j.error || r.status));
-  alert(r.ok ? JSON.stringify(j.results || j, null, 2).slice(0, 2000) : ('Apply failed: ' + (j.error || r.status)));
+  alert(r.ok ? 'Mailed to mod inbox ✓ (mods apply it from the card)' : 'Mail API offline — run wrangler dev');
 };
 render();
 </script>
