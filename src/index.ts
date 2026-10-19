@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { pollDiscord, backfillDiscordThreads, setThreadState } from './poll';
-import modTools, { expireBans, expireTimeouts, upsertIdentityLink } from './modtools';
+import modTools, { expireBans, expireTimeouts, upsertIdentityLink, checkSlowmodeSchedules } from './modtools';
 import { verifyAccessJwt } from './access';
 import {
   discordLoginUrl,
@@ -1270,6 +1270,12 @@ export default {
         if (unbanned > 0) jsonLog('info', 'temp bans expired', { unbanned });
       } catch (err) {
         jsonLog('warn', 'temp ban expiry failed', { error: String(err) });
+      }
+      try {
+        const adjusted = await checkSlowmodeSchedules(env.DB, env as any);
+        if (adjusted > 0) jsonLog('info', 'slowmode schedules applied', { adjusted });
+      } catch (err) {
+        jsonLog('warn', 'slowmode schedule check failed', { error: String(err) });
       }
     } catch (err) {
       jsonLog('error', 'discord poll failed', { error: String(err) });

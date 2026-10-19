@@ -42,6 +42,19 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
       <div class="hint" style="margin-top:10px">Discord allows 0–21600s. Click a preset to apply it to <b>all</b> channels, or edit rows individually. Channel IDs (right-click channel → Copy ID, Developer Mode on) let mods apply the plan from the inbox card.</div>
     </div>
     <div class="card"><h3>Night schedule preview</h3><div class="timeline" id="tl"></div></div>
+    <div class="card"><h3>Night schedule (bot auto-adjusts) <span style="font-size:10px;color:var(--m)">mods only</span></h3>
+      <div class="hint" style="margin-bottom:10px">The Worker checks every few minutes (needs a frequent cron, e.g. <code>*/5 * * * *</code>) and flips slowmode between day/night values on a <b>UTC</b> window. Overnight wrap works (22:00–07:00).</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label style="font-size:11px;color:var(--m)">Channel ID</label><input class="inp" id="sched-id" placeholder="123…" /></div>
+        <div><label style="font-size:11px;color:var(--m)">Channel name (label)</label><input class="inp" id="sched-name" placeholder="#general" /></div>
+        <div><label style="font-size:11px;color:var(--m)">Day secs (outside window)</label><input class="inp" id="sched-day" type="number" min="0" max="21600" value="0" /></div>
+        <div><label style="font-size:11px;color:var(--m)">Night secs (inside window)</label><input class="inp" id="sched-night" type="number" min="0" max="21600" value="10" /></div>
+        <div><label style="font-size:11px;color:var(--m)">Window start UTC</label><input class="inp" id="sched-start" value="22:00" placeholder="22:00" /></div>
+        <div><label style="font-size:11px;color:var(--m)">Window end UTC</label><input class="inp" id="sched-end" value="07:00" placeholder="07:00" /></div>
+      </div>
+      <div class="btnrow" style="display:flex;gap:8px;margin-top:10px"><button class="btn" id="sched-save" style="flex:1">Save schedule</button><button class="btn ghost" id="sched-refresh">Refresh</button></div>
+      <div id="sched-list" style="margin-top:10px;font-size:12px;color:var(--m)">Log in as a mod to manage schedules.</div>
+    </div>
   </div>
   <div>
     <div class="card"><h3>Bot config export</h3>
@@ -49,7 +62,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
       <pre class="out" id="out"></pre>
       <div class="hint">Hand this JSON to your bot dev, or mail it to the mod inbox — mods apply it from the inbox card.</div>
     </div>
-    <div class="card"><h3>How to apply this</h3><div class="hint">1. Fill in <b>Server</b> + <b>Channel IDs</b> so the plan is actionable. 2. 📬 Mail plan — mods open the inbox card and hit <b>⚡ Apply via bot</b> (bot needs Manage Channels; every apply is audited + logged). 3. <b>Manual</b>: right-click → Edit Channel → Overview → set <b>Slowmode</b> to the seconds shown.</div></div>
+    <div class="card"><h3>How to apply this</h3><div class="hint">1. Fill in <b>Server</b> + <b>Channel IDs</b> so the plan is actionable. 2. 📬 Mail plan — mods open the inbox card and hit <b>⚡ Apply via bot</b> (bot needs Manage Channels; every apply is audited + logged). 3. <b>Night schedule</b> (mods): save a UTC window below and the bot flips day/night values by itself — needs a frequent Worker cron. 4. <b>Manual</b>: right-click → Edit Channel → Overview → set <b>Slowmode</b> to the seconds shown.</div></div>
   </div>
 </div>
 <script>
@@ -102,6 +115,42 @@ $('mail').onclick = async () => {
     body: JSON.stringify({ server:'staff', type:'ticket', title:'Slowmode plan for review', content:$('out').textContent.slice(0,8000), author:'you', by:'slowmode-planner', src:'discord' }) });
   alert(r.ok ? 'Mailed to mod inbox ✓ (mods apply it from the card)' : 'Mail API offline — run wrangler dev');
 };
+// Mod-only schedules: prompt for auth on demand (unlike the silent server list).
+async function modApi(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': (() => { try { return sessionStorage.getItem('pck-mod-key') || ''; } catch { return ''; } })() });
+  let r = await fetch(path, Object.assign({}, opts, { headers }));
+  if (r.status === 401) {
+    let info = {};
+    try { info = await r.clone().json(); } catch {}
+    if (info.login) { window.location.href = '/api/auth/login'; return r; }
+    if (info.error === 'Mod key required') {
+      const k = prompt('Mod key required for schedules:');
+      if (k) { try { sessionStorage.setItem('pck-mod-key', k); } catch {} headers['X-Mod-Key'] = k; r = await fetch(path, Object.assign({}, opts, { headers })); }
+    }
+  }
+  return r;
+}
+async function loadSched() {
+  const r = await modApi('/api/slowmode-schedules');
+  if (!r.ok) { $('sched-list').textContent = 'Log in as a mod to manage schedules.'; return; }
+  const j = await r.json();
+  $('sched-list').innerHTML = (j.items || []).length ? j.items.map((s) =>
+    '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)"><b>' + String(s.channel_name || s.channel_id).replace(/</g,'&lt;') + '</b><span>' + s.day_secs + 's ↔ ' + s.night_secs + 's</span><span>' + String(s.start_utc).replace(/</g,'&lt;') + '–' + String(s.end_utc).replace(/</g,'&lt;') + ' UTC</span><span style="margin-left:auto"></span><button class="btn ghost" data-sched-del="' + s.id + '">✕</button></div>').join('')
+    : 'No schedules yet.';
+  document.querySelectorAll('[data-sched-del]').forEach((b) => b.onclick = async () => { await modApi('/api/slowmode-schedules/' + b.dataset.schedDel, { method: 'DELETE' }); loadSched(); });
+}
+$('sched-save').onclick = async () => {
+  const server = $('server').value;
+  if (!server) return alert('Pick a server first (mods: log in to load the list)');
+  const body = { server, channel_id: $('sched-id').value.trim(), channel_name: $('sched-name').value.trim(), day_secs: +$('sched-day').value || 0, night_secs: +$('sched-night').value || 0, start_utc: $('sched-start').value.trim(), end_utc: $('sched-end').value.trim() };
+  if (!/^\d{10,}$/.test(body.channel_id)) return alert('Channel ID required');
+  const r = await modApi('/api/slowmode-schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  alert(r.ok ? 'Schedule saved ✓ (bot adjusts within minutes)' : 'Failed: ' + r.status);
+  loadSched();
+};
+$('sched-refresh').onclick = loadSched;
+loadSched();
 render();
 </script>
 <div id="pck-foot"></div>

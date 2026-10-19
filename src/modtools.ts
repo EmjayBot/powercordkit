@@ -742,4 +742,116 @@ mod.post('/api/apply/lockdown', async (c) => {
   }
 });
 
+// ------------------------------------------------------------------ Slowmode schedules (time-based)
+// One row per channel: inside [start_utc, end_utc) enforce night_secs,
+// otherwise day_secs. Times are "HH:MM" UTC. The cron calls
+// checkSlowmodeSchedules() and only PATCHes on transitions (last_applied).
+function parseHHMM(s: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((s ?? '').trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+function inWindow(nowMin: number, startMin: number, endMin: number): boolean {
+  if (startMin === endMin) return true; // degenerate: always night
+  if (startMin < endMin) return nowMin >= startMin && nowMin < endMin;
+  return nowMin >= startMin || nowMin < endMin; // overnight wrap
+}
+
+export async function checkSlowmodeSchedules(db: D1Database, env: Env): Promise<number> {
+  const token = env.DISCORD_BOT_TOKEN;
+  if (!token) return 0;
+  let rows: any[] = [];
+  try {
+    const res = await db
+      .prepare('SELECT * FROM slowmode_schedules WHERE is_active = 1')
+      .all();
+    rows = (res.results ?? []) as any[];
+  } catch {
+    return 0; // pre-migration
+  }
+  if (!rows.length) return 0;
+  const now = new Date();
+  const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  let changed = 0;
+  for (const s of rows.slice(0, 25)) {
+    const start = parseHHMM(s.start_utc);
+    const end = parseHHMM(s.end_utc);
+    if (start === null || end === null) continue;
+    const day = Math.max(0, Math.min(21600, Number(s.day_secs ?? 0) | 0));
+    const night = Math.max(0, Math.min(21600, Number(s.night_secs ?? 10) | 0));
+    const target = inWindow(nowMin, start, end) ? night : day;
+    if (s.last_applied !== null && Number(s.last_applied) === target) continue;
+    const r = await discordJson(token, 'PATCH', `/channels/${s.channel_id}`, { rate_limit_per_user: target });
+    if (r.ok) {
+      await db.prepare('UPDATE slowmode_schedules SET last_applied = ? WHERE id = ?').bind(target, s.id).run();
+      await audit(db, { action: 'slowmode_schedule', user_id: undefined, detail: { channel: s.channel_id, server: s.server, target } });
+      await mailResult(db, {
+        server: s.server,
+        title: `Slowmode ${target}s on ${s.channel_name || s.channel_id} (${target === night ? 'night' : 'day'} window)`,
+        content: JSON.stringify({ tool: 'slowmode-schedule', server: s.server, channel_id: s.channel_id, target_secs: target }, null, 2),
+        by: 'slowmode-schedule',
+      });
+      changed++;
+    } else {
+      jsonLog('warn', 'slowmode schedule apply failed', { channel: s.channel_id, status: r.status });
+    }
+  }
+  return changed;
+}
+
+mod.get('/api/slowmode-schedules', async (c) => {
+  try {
+    const res = await c.env.DB.prepare('SELECT * FROM slowmode_schedules ORDER BY server, channel_name').all();
+    return c.json({ ok: true, items: res.results ?? [] });
+  } catch {
+    return c.json({ ok: true, items: [] });
+  }
+});
+
+mod.post('/api/slowmode-schedules', async (c) => {
+  try {
+    const body = await readJson<{ server?: string; channel_id?: string; channel_name?: string; day_secs?: number; night_secs?: number; start_utc?: string; end_utc?: string }>(c);
+    const slug = (body.server ?? '').trim();
+    if (!toolServers(c.env)[slug]?.guild && slug !== 'global') {
+      const map = toolServers(c.env);
+      if (!map[slug]) return bad('unknown server slug — check MOD_TOOL_SERVERS', 400);
+    }
+    if (!SNOW.test(String(body.channel_id ?? ''))) return bad('valid channel_id required', 400);
+    const day = Number(body.day_secs ?? 0);
+    const night = Number(body.night_secs ?? 10);
+    if (!Number.isInteger(day) || !Number.isInteger(night) || day < 0 || day > 21600 || night < 0 || night > 21600) {
+      return bad('day_secs/night_secs must be 0–21600', 400);
+    }
+    if (parseHHMM(String(body.start_utc ?? '')) === null || parseHHMM(String(body.end_utc ?? '')) === null) {
+      return bad('start_utc/end_utc must be HH:MM (UTC, 24h)', 400);
+    }
+    const modId = await actingMod(c.env, c.req.raw.headers);
+    if (!(await checkRateLimit(c.env.DB, 'sched:' + modId, 10, 60000)))
+      return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
+    const id = newId();
+    await c.env.DB.prepare(
+      `INSERT INTO slowmode_schedules (id, server, channel_id, channel_name, day_secs, night_secs, start_utc, end_utc, last_applied, created_by, created_at, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 1)
+       ON CONFLICT(server, channel_id) DO UPDATE SET channel_name = excluded.channel_name, day_secs = excluded.day_secs,
+         night_secs = excluded.night_secs, start_utc = excluded.start_utc, end_utc = excluded.end_utc, is_active = 1, last_applied = NULL`,
+    )
+      .bind(id, slug, String(body.channel_id), String(body.channel_name ?? '').slice(0, 80), day, night, String(body.start_utc), String(body.end_utc), modId, new Date().toISOString())
+      .run();
+    await audit(c.env.DB, { action: 'slowmode_schedule_upsert', mod_id: modId, detail: { server: slug, channel: body.channel_id } });
+    return c.json({ ok: true, id });
+  } catch (err) {
+    jsonLog('error', 'slowmode schedule save failed', { error: String(err) });
+    return bad('Failed to save schedule', 500);
+  }
+});
+
+mod.delete('/api/slowmode-schedules/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM slowmode_schedules WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
 export default mod;
