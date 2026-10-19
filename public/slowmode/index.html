@@ -104,8 +104,8 @@ function render(){
     const w = Math.min(100, (r.s/60)*100);
     return '<div class="slot"><b style="min-width:90px">'+r.ch.replace(/</g,'&lt;')+'</b><div class="bar" style="width:'+Math.max(8,w)+'px"></div><span>'+fmt(r.s)+'</span><span style="color:var(--m)">'+(r.note||'').replace(/</g,'&lt;')+'</span></div>';
   }).join('') || '<span style="color:var(--m);font-size:12px">No channels.</span>';
-  $('out').textContent = JSON.stringify({ tool:'slowmode-planner', version:1, exported_at:new Date().toISOString(),
-    channels: rows.map(r => ({ channel: r.ch, slowmode_seconds: r.s, schedule: r.note || '' })) }, null, 2);
+  $('out').textContent = JSON.stringify({ tool:'slowmode-planner', version:1, exported_at:new Date().toISOString(), server: $('server').value || undefined,
+    channels: rows.map(r => ({ channel: r.ch, channel_id: String(r.id || '').trim() || undefined, slowmode_seconds: r.s, schedule: r.note || '' })) }, null, 2);
 }
 document.querySelectorAll('.preset').forEach(p => p.onclick = () => { rows.forEach(r => r.s = +p.dataset.p); render(); });
 $('add').onclick = () => { rows.push({ch:'#new-channel', id:'', s:5, note:''}); render(); };

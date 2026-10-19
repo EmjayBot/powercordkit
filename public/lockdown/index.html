@@ -113,8 +113,8 @@ function render(){
   document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { rows.splice(+b.dataset.del,1); render(); });
   $('tl').innerHTML = rows.map(r => '<div class="slot"><span class="dot '+r.mode+'"></span><b style="min-width:100px">'+String(r.ch).replace(/</g,'&lt;')+'</b><span>'+r.mode+'</span><span style="color:var(--m)">'+(r.s?r.s+'s':'')+' '+(String(r.note||'').replace(/</g,'&lt;'))+'</span></div>').join('') || '<span style="color:var(--m);font-size:12px">No channels.</span>';
   const exempt = $('exempt').value.split(',').map(s => s.trim()).filter(Boolean);
-  $('out').textContent = JSON.stringify({ tool:'lockdown-plan', version:1, exported_at:new Date().toISOString(), exempt_roles: exempt,
-    channels: rows.map(r => ({ channel: r.ch, mode: r.mode, slowmode_seconds: r.s, deny_everyone: MODES[r.mode].deny, schedule_note: r.note || '' })) }, null, 2);
+  $('out').textContent = JSON.stringify({ tool:'lockdown-plan', version:1, exported_at:new Date().toISOString(), server: $('server').value || undefined, exempt_roles: exempt,
+    channels: rows.map(r => ({ channel: r.ch, channel_id: String(r.id || '').trim() || undefined, mode: r.mode, slowmode_seconds: r.s, deny_everyone: MODES[r.mode].deny, schedule_note: r.note || '' })) }, null, 2);
 }
 document.querySelectorAll('.preset').forEach(p => p.onclick = () => {
   const m = p.dataset.p;

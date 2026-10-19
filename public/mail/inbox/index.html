@@ -95,9 +95,12 @@ function toolCard(raw) {
   }
   if (o.tool === 'lockdown-plan' || o.tool === 'slowmode-planner') {
     const ch = o.channels || [];
-    return chip(o.tool === 'lockdown-plan' ? 'lockdown' : 'slowmode') + ' <span style="font-size:12px;color:var(--m)">' + ch.length + ' channels</span>' +
+    const canApply = o.server && ch.length && ch.every((c) => /^\d{10,}$/.test(String(c.channel_id || '')));
+    return chip(o.tool === 'lockdown-plan' ? 'lockdown' : 'slowmode') + ' <span style="font-size:12px;color:var(--m)">' + ch.length + ' channels' + (o.server ? ' → ' + esc(o.server) : '') + '</span>' +
       '<div style="margin-top:8px">' + ch.map((c) => '<div style="font-size:12px;padding:6px 8px;background:#1e1e22;border:1px solid #26262b;border-radius:8px;margin-bottom:6px"><b>' + esc(c.channel || c.name || '?') + '</b> — ' + esc(c.mode || (c.slowmode_seconds ? c.slowmode_seconds + 's' : 'open')) + (c.slowmode_seconds ? ' (' + esc(String(c.slowmode_seconds)) + 's)' : '') + (c.deny_everyone ? ' <span style="color:var(--m)">deny: ' + esc((c.deny_everyone || []).join(', ')) + '</span>' : '') + (c.schedule || c.schedule_note ? '<br><span style="color:var(--m)">' + esc(c.schedule || c.schedule_note) + '</span>' : '') + '</div>').join('') + '</div>' +
-      '<div style="margin-top:8px;font-size:11px;color:var(--m)">Apply: set each slowmode in channel settings, add the @everyone overwrites, exempt ' + esc((o.exempt_roles || []).join(', ') || 'mods') + '.</div>';
+      (canApply
+        ? '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="abtn prim" id="plan-apply">⚡ Apply via bot</button><span id="plan-apply-msg" style="font-size:11px;color:var(--m)"></span></div>'
+        : '<div style="margin-top:8px;font-size:11px;color:var(--m)">To apply from here, re-mail the plan with Server + Channel IDs filled in (planner → ⚡ Apply needs IDs; manual: channel settings + @everyone overwrites, exempt ' + esc((o.exempt_roles || []).join(', ') || 'mods') + ').</div>');
   }
   if (o.tool === 'giveaway-roller') {
     return chip('giveaway') + ' <span style="font-size:12px;color:var(--m)">seed ' + esc(String(o.seed || '')) + '</span>' +
@@ -298,6 +301,23 @@ function select(id) {
     '</div>';
   $('arch-btn').onclick = () => (sel.archived ? reopen(sel.id) : complete(sel.id));
   $('jump-btn').onclick = () => { if (sel.url && sel.url !== '#') window.open(sel.url, '_blank', 'noopener'); };
+  const planBtn = $('plan-apply');
+  if (planBtn) planBtn.onclick = async () => {
+    let o = null;
+    try { o = JSON.parse(sel.content); } catch { return; }
+    const isLock = o.tool === 'lockdown-plan';
+    const endpoint = isLock ? '/api/apply/lockdown' : '/api/apply/slowmode';
+    if (!confirm('Apply this ' + (isLock ? 'lockdown' : 'slowmode') + ' plan to ' + (o.channels || []).length + ' channel(s) on "' + o.server + '" via the bot?')) return;
+    const msg = $('plan-apply-msg');
+    if (msg) msg.textContent = 'Applying…';
+    const payload = isLock
+      ? { server: o.server, exempt_roles: o.exempt_roles || [], channels: (o.channels || []).map((c) => ({ channel_id: String(c.channel_id), mode: c.mode, slowmode_seconds: Number(c.slowmode_seconds ?? 0), note: c.schedule_note || c.schedule || '' })) }
+      : { server: o.server, channels: (o.channels || []).map((c) => ({ channel_id: String(c.channel_id), slowmode_seconds: Number(c.slowmode_seconds ?? 0), note: c.schedule || '' })) };
+    const r = await api(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    let j = {};
+    try { j = await r.json(); } catch {}
+    if (msg) msg.textContent = r.ok ? 'Applied ✓ — logged to the inbox.' : ('Failed: ' + (j.error || r.status));
+  };
   $('assign-link').onclick = (e) => { e.preventDefault(); assign(sel.id, '@me'); };
   $('note-btn').onclick = () => addNote(sel.id);
   $('rm-save').onclick = () => roadmapSave(sel.id);
