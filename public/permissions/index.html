@@ -132,7 +132,7 @@ $('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent);
 $('mail').onclick = async () => {
   const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ server:'staff', type:'ticket', title:'Perm review for approval', content:$('out').textContent.slice(0,8000), author:'you', by:'permission-calc', src:'discord' }) });
-  alert(r.ok ? 'Mailed to mod inbox ✓' : 'Mail API offline — run wrangler dev');
+  alert(r.ok ? 'Mailed to mod inbox ✓' : (r.status === 401 ? 'Log in as a mod to mail this to the inbox' : 'Mail API offline — run wrangler dev'));
 };
 render();
 </script>

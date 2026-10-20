@@ -122,7 +122,7 @@ $('dl').onclick = () => { const a = document.createElement('a'); a.href = URL.cr
 $('mail').onclick = async () => {
   const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ server:'general', type:'idea', title:'Embed draft: ' + ($('f-title').value || 'untitled'), content:$('out').textContent.slice(0,8000), author:'you', by:'embed-lab', src:'discord' }) });
-  alert(r.ok ? 'Sent to Mail inbox ✓' : 'Mail API offline — run wrangler dev');
+  alert(r.ok ? 'Sent to Mail inbox ✓' : (r.status === 401 ? 'Log in as a mod to mail this to the inbox' : 'Mail API offline — run wrangler dev'));
 };
 renderFields(); render();
 </script>

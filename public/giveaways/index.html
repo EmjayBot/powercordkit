@@ -85,7 +85,7 @@ $('mail').onclick = async () => {
   if (!last.winners.length) return alert('Roll first');
   const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ server:'staff', type:'ticket', title:'Giveaway results (' + last.winners.length + ' winner(s))', content:$('out').textContent.slice(0,8000), author:'you', by:'giveaway-roller', src:'discord' }) });
-  alert(r.ok ? 'Mailed to mod inbox ✓' : 'Mail API offline — run wrangler dev');
+  alert(r.ok ? 'Mailed to mod inbox ✓' : (r.status === 401 ? 'Log in as a mod to mail this to the inbox' : 'Mail API offline — run wrangler dev'));
 };
 $('entrants').oninput = entries; $('dedupe').onchange = entries; entries();
 </script>

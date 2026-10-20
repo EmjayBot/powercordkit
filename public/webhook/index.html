@@ -113,7 +113,7 @@ $('curl').onclick = () => {
 $('mail').onclick = async () => {
   const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ server:'staff', type:'mailed', title:'Webhook draft for review: ' + ($('w-name').value || 'webhook'), content: $('out').textContent.slice(0,8000), author:'you', by:'webhook-lab', src:'discord' }) });
-  alert(r.ok ? 'Mailed to mod inbox ✓' : 'Mail API offline — run wrangler dev');
+  alert(r.ok ? 'Mailed to mod inbox ✓' : (r.status === 401 ? 'Log in as a mod to mail this to the inbox' : 'Mail API offline — run wrangler dev'));
 };
 render();
 </script>

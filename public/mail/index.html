@@ -77,6 +77,7 @@ code{background:var(--p2);border:1px solid var(--bd);border-radius:6px;padding:2
   </div>
 </div>
 <div id="pck-foot"></div>
+<script src="/assets/demo.js"></script>
 <script src="/assets/site.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -133,6 +134,23 @@ async function load(){
     col('c-ideas', ideas, 'No ideas yet.');
     col('c-recent', items, 'Inbox Zero 🎉');
   } catch (e) {
+    // Logged-out visitors get a clearly-badged demo instead of a locked screen.
+    // Demo mode is read-only: stats/cards below never POST anywhere.
+    if (window.PCKDemo) {
+      PCKDemo.enter();
+      const host = location.host;
+      const items = window.PCKDemo.items;
+      setPills('Demo preview', 'live', host);
+      $('host').innerHTML = 'showing <b>demo data</b> — <a href="/api/auth/login" style="color:#8b96f8">log in</a> for the live inbox';
+      $('s-open').textContent = items.length;
+      $('s-tickets').textContent = items.filter(i => i.type === 'ticket').length;
+      $('s-ideas').textContent = items.filter(i => i.type === 'idea').length;
+      $('s-unassigned').textContent = items.filter(i => !i.assigned).length;
+      col('c-tickets', items.filter(i => i.type === 'ticket'), 'No open tickets 🎉');
+      col('c-ideas', items.filter(i => i.type === 'idea'), 'No ideas yet.');
+      col('c-recent', items, 'Inbox Zero 🎉');
+      return;
+    }
     // Never show fake data: this inbox only ever renders real API data.
     const code = (e && (e.code || e.status)) || 'offline';
     setPills('Locked', 'off', window.__pckLogin ? 'signed out' : 'mod key required');

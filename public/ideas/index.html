@@ -78,7 +78,18 @@ async function load(){
     const j = await r.json();
     items = j.items || [];
     $('status').textContent = items.length + ' ideas in queue • backed by Mail API';
-  } catch { $('status').innerHTML = window.__pckLogin ? '🔒 Signed out — <a href="/api/auth/login" style="color:#5865F2">Log in with Discord</a>' : 'API offline — run wrangler dev (or check deployment)'; items = []; }
+  } catch {
+    if (window.PCKDemo) {
+      PCKDemo.enter();
+      const q = $('q').value.trim().toLowerCase();
+      const all = PCKDemo.items.filter((d) => d.type === 'idea');
+      items = q ? all.filter((d) => (d.title + ' ' + d.content).toLowerCase().includes(q)) : all;
+      $('status').innerHTML = PCKDemo.banner() + ' — ' + items.length + ' sample ideas';
+      render();
+      return;
+    }
+    $('status').innerHTML = window.__pckLogin ? '🔒 Signed out — <a href="/api/auth/login" style="color:#5865F2">Log in with Discord</a>' : 'API offline — run wrangler dev (or check deployment)'; items = [];
+  }
   render();
 }
 function render(){
@@ -89,10 +100,12 @@ function render(){
     '<div class="actions"><button class="btn ghost" data-road="' + d.id + '">Promote to roadmap</button><button class="btn ghost" data-drop="' + d.id + '">Drop</button></div></div>').join('')
     || '<div style="color:var(--m);font-size:13px">No ideas yet — capture the first one above.</div>';
   document.querySelectorAll('[data-road]').forEach(b => b.onclick = async () => {
+    if (window.PCKDemo && PCKDemo.blocked()) return;
     await api('/api/inbox/' + b.dataset.road + '/roadmap', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ roadmap:true }) });
     load();
   });
   document.querySelectorAll('[data-drop]').forEach(b => b.onclick = async () => {
+    if (window.PCKDemo && PCKDemo.blocked()) return;
     await api('/api/inbox/' + b.dataset.drop + '/archive', { method:'POST' });
     load();
   });
@@ -101,6 +114,7 @@ $('q').oninput = load;
 $('new').onclick = () => $('form').classList.toggle('open');
 $('cancel').onclick = () => $('form').classList.remove('open');
 $('send').onclick = async () => {
+  if (window.PCKDemo && PCKDemo.blocked()) return;
   if(!$('f-title').value.trim()) return alert('Title required');
   const r = await api('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
     server:'general', type:'idea', title:$('f-title').value, content:$('f-body').value, author:'you', by:'idea-capture', src:'discord' }) });
@@ -110,6 +124,7 @@ $('send').onclick = async () => {
 load();
 </script>
 <div id="pck-foot"></div>
+<script src="/assets/demo.js"></script>
 <script src="/assets/site.js"></script>
 </body>
 </html>

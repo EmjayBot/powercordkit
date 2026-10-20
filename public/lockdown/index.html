@@ -113,7 +113,7 @@ $('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent);
 $('mail').onclick = async () => {
   const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ server:'staff', type:'ticket', title:'Lockdown plan for review', content:$('out').textContent.slice(0,8000), author:'you', by:'lockdown-planner', src:'discord' }) });
-  alert(r.ok ? 'Mailed to mod inbox ✓ (mods apply it from the card)' : 'Mail API offline — run wrangler dev');
+  alert(r.ok ? 'Mailed to mod inbox ✓ (mods apply it from the card)' : (r.status === 401 ? 'Log in as a mod to mail this to the inbox' : 'Mail API offline — run wrangler dev'));
 };
 render();
 </script>

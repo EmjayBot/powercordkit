@@ -220,13 +220,20 @@ async function load() {
     const h = await fetch('/api/health', { cache: 'no-store' }).then(x=>x.json()).catch(()=>null);
     if (h) { if (window.PCK) window.PCK.right('<span class="pill">' + (h.env || 'personal') + '</span>'); const host = h.communityDomain || h.personalDomain || location.host; $('api-env').textContent = host + ' (Workers + D1)'; $('hook-hint').innerHTML = 'Discourse webhook:<br/>POST https://' + host + '/hooks/discourse'; }
   } catch (e) {
-    // Never show fake items: this inbox only ever renders real API data.
+    // Logged-out visitors get a clearly-badged demo instead of a locked screen.
+    if (window.PCKDemo) {
+      PCKDemo.enter();
+      data = window.PCKDemo.items.slice();
+      $('status').innerHTML = window.PCKDemo.banner() + ' — ' + data.length + ' sample items';
+      render();
+      return;
+    }
     const code = (e && e.status) ? ('API ' + e.status) : 'API offline';
     $('status').textContent = window.__pckLogin ? 'Signed out' : ('Locked — ' + code);
     $('items').innerHTML = '';
     $('detail').innerHTML = window.__pckLogin
       ? '<div style="padding:60px 20px;text-align:center;color:var(--m)"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-weight:600;color:var(--t)">Signed out</div><div style="font-size:13px;margin:8px auto;max-width:320px;line-height:1.5">Log in with Discord to load the inbox.</div><a href="/api/auth/login" style="display:inline-block;margin-top:10px;background:#5865F2;color:#fff;text-decoration:none;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700">Log in with Discord</a><div style="margin-top:10px;font-size:11px;opacity:.6">' + code + '</div></div>'
-      : '<div style="padding:60px 20px;text-align:center;color:var(--m)"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-weight:600;color:var(--t)">Mod key required</div><div style="font-size:13px;margin:8px auto;max-width:320px;line-height:1.5">This inbox is private. Enter the mod key to load real items — no sample data is ever shown.</div><button class="unlock-btn" style="margin-top:10px;background:#5865F2;color:#fff;border:0;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer">Enter mod key</button><div style="margin-top:10px;font-size:11px;opacity:.6">' + code + '</div></div>';
+      : '<div style="padding:60px 20px;text-align:center;color:var(--m)"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-weight:600;color:var(--t)">Mod key required</div><div style="font-size:13px;margin:8px auto;max-width:320px;line-height:1.5">This inbox is private. Enter the mod key to load real items.</div><button class="unlock-btn" style="margin-top:10px;background:#5865F2;color:#fff;border:0;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer">Enter mod key</button><div style="margin-top:10px;font-size:11px;opacity:.6">' + code + '</div></div>';
     document.querySelectorAll('.unlock-btn').forEach((b) => b.onclick = () => { window.__pckLocked = false; sessionStorage.removeItem('pck-mod-key'); load(); });
     render();
     return;
@@ -335,6 +342,7 @@ function select(id) {
       : 'No notes for that user.';
   }
   $('mt-warn').onclick = async () => {
+    if (window.PCKDemo && PCKDemo.blocked()) return;
     const u = mtUser();
     if (!/^\d{10,}$/.test(u)) return alert('Enter a valid Discord user ID');
     const r = await api('/api/infractions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: u, type: 'warn', reason: (sel.title || '').slice(0, 1000), mail_item_id: sel.id }) });
@@ -349,6 +357,7 @@ function select(id) {
 }
 
 async function roadmapSave(id) {
+  if (window.PCKDemo && PCKDemo.blocked()) return;
   const status = $('rm-status').value;
   const date = $('rm-date').value;
   try { await api('/api/inbox/' + encodeURIComponent(id) + '/roadmap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, date }) }); } catch {}
@@ -357,12 +366,14 @@ async function roadmapSave(id) {
 }
 
 async function roadmapRemove(id) {
+  if (window.PCKDemo && PCKDemo.blocked()) return;
   try { await api('/api/inbox/' + encodeURIComponent(id) + '/roadmap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roadmap: false }) }); } catch {}
   await load();
   select(id);
 }
 
 async function complete(id) {
+  if (window.PCKDemo && PCKDemo.blocked()) return;
   try { await api('/api/inbox/' + encodeURIComponent(id) + '/complete', { method: 'POST' }); } catch {}
   data = data.filter((d) => String(d.id) !== String(id));
   sel = null;
@@ -372,6 +383,7 @@ async function complete(id) {
 }
 
 async function reopen(id) {
+  if (window.PCKDemo && PCKDemo.blocked()) return;
   try { await api('/api/inbox/' + encodeURIComponent(id) + '/reopen', { method: 'POST' }); } catch {}
   data = data.filter((d) => String(d.id) !== String(id));
   sel = null;
@@ -381,6 +393,7 @@ async function reopen(id) {
 }
 
 async function addNote(id) {
+  if (window.PCKDemo && PCKDemo.blocked()) return;
   const inp = $('note-inp');
   if (!inp || !inp.value.trim()) return;
   try {
@@ -391,12 +404,14 @@ async function addNote(id) {
 }
 
 async function assign(id, who) {
+  if (window.PCKDemo && PCKDemo.blocked()) return;
   try { await api('/api/inbox/' + encodeURIComponent(id) + '/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assigned: who }) }); } catch {}
   await load();
   select(id);
 }
 
 async function addItem() {
+  if (window.PCKDemo && PCKDemo.blocked()) return;
   const payload = { title: $('m-title').value, content: $('m-content').value, server: $('m-server').value, type: $('m-type').value, src: $('m-server').value === 'discourse' ? 'discourse' : 'discord', by: 'you', author: 'you' };
   try {
     const r = await api('/api/inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -430,6 +445,7 @@ sideEl.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E') { if (sel && document.activeElement.tagName !== 'INPUT') { sel.archived ? reopen(sel.id) : complete(sel.id); } } if (e.key === 'Escape') closeM(); });
 load();
 </script>
+<script src="/assets/demo.js"></script>
 <script src="/assets/site.js"></script>
 </body>
 </html>
