@@ -50,7 +50,7 @@ ol.steps{font-size:13px;line-height:1.7;color:#d6d6da;margin:8px 0 0 18px;paddin
     </div>
     <div class="card"><h3>Bot config export</h3>
       <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" data-pck-feature="inbox" style="flex:1">📬 Mail plan</button></div>
-      <pre class="out" id="out"></pre>
+      <details style="margin-top:8px"><summary style="font-size:11px;color:var(--m);cursor:pointer">View raw JSON</summary><pre class="out" id="out" style="margin-top:8px"></pre></details>
     </div>
     <div class="card"><h3>How to apply this</h3>
       <div class="hint">1. Fill in <b>Server</b> + <b>Channel IDs</b> + exempt role names. 2. 📬 Mail plan — mods open the inbox card and hit <b>⚡ Apply via bot</b> (sets slowmode + @everyone overwrites, re-allows exempt roles; bot needs <b>Manage Channels</b>; every apply is audited + logged). 3. <b>Manual</b>: per channel Edit Channel → Overview → Slowmode; Permissions → @everyone → <b>deny</b> each permission under <code>deny_everyone</code>; re-allow your mod roles. 4. Post a notice in #announcements.</div>

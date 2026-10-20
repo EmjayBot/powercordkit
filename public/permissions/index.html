@@ -56,7 +56,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
     </div>
     <div class="card"><h3>Export</h3>
       <div class="btnrow"><button class="btn" id="copy">Copy JSON</button><button class="btn ghost" id="mail" data-pck-feature="inbox">📬 Send to Mail</button></div>
-      <pre class="out" id="out"></pre>
+      <details style="margin-top:8px"><summary style="font-size:11px;color:var(--m);cursor:pointer">View raw JSON</summary><pre class="out" id="out" style="margin-top:8px"></pre></details>
     </div>
     <div class="card"><h3>How to apply this</h3>
       <div class="hint">1. Copy JSON above. 2. The <b>warnings</b> tell you what to change — use them in Server Settings → Roles (tick/untick the named permissions). 3. The <b>decimal</b> is only for bots: paste it as <code>permissions: "..."</code> in a role-create call. 4. Overwrites: Allow adds, Deny removes; Administrator ignores all overwrites. 5. 📬 Send to Mail files it as a ticket for a second pair of eyes.</div>

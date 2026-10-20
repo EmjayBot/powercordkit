@@ -59,7 +59,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
   <div>
     <div class="card"><h3>Bot config export</h3>
       <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" data-pck-feature="inbox" style="flex:1">📬 Mail plan</button></div>
-      <pre class="out" id="out"></pre>
+      <details style="margin-top:8px"><summary style="font-size:11px;color:var(--m);cursor:pointer">View raw JSON</summary><pre class="out" id="out" style="margin-top:8px"></pre></details>
       <div class="hint">Hand this JSON to your bot dev, or mail it to the mod inbox — mods apply it from the inbox card.</div>
     </div>
     <div class="card"><h3>How to apply this</h3><div class="hint">1. Fill in <b>Server</b> + <b>Channel IDs</b> so the plan is actionable. 2. 📬 Mail plan — mods open the inbox card and hit <b>⚡ Apply via bot</b> (bot needs Manage Channels; every apply is audited + logged). 3. <b>Night schedule</b> (mods): save a UTC window below and the bot flips day/night values by itself — needs a frequent Worker cron. 4. <b>Manual</b>: right-click → Edit Channel → Overview → set <b>Slowmode</b> to the seconds shown.</div></div>
