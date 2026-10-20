@@ -91,7 +91,7 @@ function toolCard(raw) {
       '<div style="margin-top:8px">' + row('Base', list(o.base)) + row('Overwrites', esc(JSON.stringify(o.overwrites || {}))) + '</div>' +
       ((o.warnings || []).length ? '<div style="margin-top:8px">' + o.warnings.map((w) => '<div style="font-size:12px;color:#fee75c">⚠️ ' + esc(w) + '</div>').join('') + '</div>' : '') +
       '<div style="margin-top:8px;font-size:11px;color:var(--m)">Apply: paste the decimal into your bot config or role editor, then re-check warnings. Full JSON below.</div>' +
-      '<pre style="font-size:11px;background:#111;padding:8px;border-radius:6px;overflow:auto;margin-top:8px">' + esc(raw.slice(0, 4000)) + '</pre>';
+      '<pre data-json style="font-size:11px;background:#111;padding:8px;border-radius:6px;overflow:auto;margin-top:8px">' + esc(raw.slice(0, 4000)) + '</pre>';
   }
   if (o.tool === 'lockdown-plan' || o.tool === 'slowmode-planner') {
     const ch = o.channels || [];
@@ -310,6 +310,7 @@ function select(id) {
     '</div>';
   $('arch-btn').onclick = () => (sel.archived ? reopen(sel.id) : complete(sel.id));
   $('jump-btn').onclick = () => { if (sel.url && sel.url !== '#') window.open(sel.url, '_blank', 'noopener'); };
+  try { var __jp = det.querySelector('[data-json]'); if (__jp && window.PCKJSON) PCKJSON.setPretty(__jp, __jp.textContent); } catch (e) {}
   const planBtn = $('plan-apply');
   if (planBtn) planBtn.onclick = async () => {
     let o = null;
@@ -448,6 +449,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E'
 load();
 </script>
 <script src="/assets/demo.js"></script>
+<script src="/assets/jsonview.js"></script>
 <script src="/assets/site.js"></script>
 </body>
 </html>

@@ -32,6 +32,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
 .hint{font-size:12px;color:var(--m);line-height:1.6}
 .warn{background:rgba(237,66,69,.08);border:1px solid rgba(237,66,69,.4);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6;margin-bottom:16px}
 </style>
+  <script src="/assets/jsonview.js"></script>
 </head>
 <body>
 <div id="pck-nav"></div>
@@ -51,7 +52,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
   </div>
   <div>
     <div class="card"><h3>Preview</h3><div class="dmsg"><span class="u" id="pv-name">ModBot</span><span class="bot">BOT</span><div id="pv-content" style="margin-top:2px"></div><div class="emb" id="pv-emb" style="display:none"><div class="et" id="pv-et"></div><div class="ed" id="pv-ed"></div></div></div></div>
-    <div class="card"><h3>Payload</h3><details style="margin-top:8px"><summary style="font-size:11px;color:var(--m);cursor:pointer">View raw JSON</summary><pre class="out" id="out" style="margin-top:8px"></pre></details>
+    <div class="card"><h3>Payload</h3><pre class="out" id="out"></pre>
       <div class="btnrow"><button class="btn" id="send">Send via Discord</button><button class="btn ghost" id="curl">Copy curl</button><button class="btn ghost" id="mail" data-pck-feature="inbox">📬 Mail for review</button></div>
       <div class="log" id="log"></div>
       <div class="hint">Send posts straight to Discord from your browser (Discord allows it). For bot backends, copy the curl instead. URL guard: only <code>discord.com / discordapp.com</code> (+ptb/canary) accepted, no localhost or raw IPs.</div>
@@ -90,6 +91,7 @@ function render(){
   if(hasEmb){ $('pv-et').textContent = p.embeds[0].title || ''; $('pv-ed').textContent = p.embeds[0].description || '';
     $('pv-emb').style.borderLeftColor = $('w-ec').value; }
   $('out').textContent = JSON.stringify(p, null, 2);
+  if (window.PCKJSON) PCKJSON.setPretty($('out'), $('out').textContent);
   const chk = $('w-url').value.trim() ? urlOk($('w-url').value) : '';
   $('url-check').innerHTML = !$('w-url').value.trim() ? 'Waiting for a webhook URL…' :
     (chk === '' ? '<span style="color:#3ba55d">✔ Looks like a valid Discord webhook URL</span>' : '<span style="color:#ed4245">✖ ' + esc(chk) + '</span>');

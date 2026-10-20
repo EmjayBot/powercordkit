@@ -30,6 +30,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
 .tri{display:flex;gap:6px;align-items:center;font-size:12px}.tri button{background:var(--p2);border:1px solid var(--bd);color:var(--t);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer;min-width:64px}
 .tri button.on-allow{border-color:var(--ok);color:var(--ok)}.tri button.on-deny{border-color:var(--no);color:var(--no)}
 </style>
+  <script src="/assets/jsonview.js"></script>
 </head>
 <body>
 <div id="pck-nav"></div>
@@ -56,7 +57,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
     </div>
     <div class="card"><h3>Export</h3>
       <div class="btnrow"><button class="btn" id="copy">Copy JSON</button><button class="btn ghost" id="mail" data-pck-feature="inbox">📬 Send to Mail</button></div>
-      <details style="margin-top:8px"><summary style="font-size:11px;color:var(--m);cursor:pointer">View raw JSON</summary><pre class="out" id="out" style="margin-top:8px"></pre></details>
+      <pre class="out" id="out"></pre>
     </div>
     <div class="card"><h3>How to apply this</h3>
       <div class="hint">1. Copy JSON above. 2. The <b>warnings</b> tell you what to change — use them in Server Settings → Roles (tick/untick the named permissions). 3. The <b>decimal</b> is only for bots: paste it as <code>permissions: "..."</code> in a role-create call. 4. Overwrites: Allow adds, Deny removes; Administrator ignores all overwrites. 5. 📬 Send to Mail files it as a ticket for a second pair of eyes.</div>
@@ -127,6 +128,7 @@ function render(){
   $('allowed').innerHTML = e.allowed.map(n => '<span class="chip">'+n+'</span>').join('') || '<span style="font-size:12px;color:var(--m)">Nothing allowed</span>';
   $('denied').innerHTML = (e.denied||[]).slice(0,24).map(n => '<span class="chip">'+n+'</span>').join('') + ((e.denied||[]).length > 24 ? ' <span class="chip">+'+(e.denied.length-24)+' more</span>' : '');
   $('out').textContent = JSON.stringify({ tool: 'permission-calc', version: 1, exported_at: new Date().toISOString(), base: [...base], overwrites: over, effective_decimal: e.bits.toString(), effective_hex: '0x'+e.bits.toString(16), warnings: w.map(x => x.replace(/<[^>]+>/g,'')) }, null, 2);
+  if (window.PCKJSON) PCKJSON.setPretty($('out'), $('out').textContent);
 }
 $('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent); $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy JSON',1200); };
 $('mail').onclick = async () => {

@@ -25,6 +25,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
 mark{background:rgba(237,66,69,.35);color:#fff;border-radius:3px;padding:0 2px}
 label.chk{display:flex;gap:8px;align-items:center;font-size:13px;margin-top:8px}label.chk input{accent-color:var(--b)}
 </style>
+  <script src="/assets/jsonview.js"></script>
 </head>
 <body>
 <div id="pck-nav"></div>
@@ -55,7 +56,7 @@ label.chk{display:flex;gap:8px;align-items:center;font-size:13px;margin-top:8px}
   <div>
     <div class="card"><h3>Export</h3>
       <div class="btnrow"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" data-pck-feature="inbox" style="flex:1">📬 Mail rule</button></div>
-      <details style="margin-top:8px"><summary style="font-size:11px;color:var(--m);cursor:pointer">View raw JSON</summary><pre class="out" id="out" style="margin-top:8px"></pre></details>
+      <pre class="out" id="out"></pre>
     </div>
     <div class="card"><h3>How to apply this</h3><div class="hint">1. Copy JSON — <code>discord_rule</code> pastes straight into <code>POST /guilds/{id}/auto-moderation/rules</code> (or recreate by hand: Server Settings → AutoMod → Keyword filter → keywords + regex + allow list). 2. Mention limit = the separate <b>Mention Spam preset</b> (<code>mention_total_limit</code>). 3. Caps/emoji/link counts are <b>custom heuristics for bots</b>, not native AutoMod. 4. ⚠️ Fix any RE2 warnings first — Discord rejects JS-only regex. 📬 Mail rule files it for review.</div></div>
   </div>
@@ -143,6 +144,7 @@ function test(){
       actions: [{ type: 1 }], enabled: false },
     mention_spam_preset: { trigger_type: 3, mention_total_limit: mMax },
     note: 'discord_rule pastes straight into POST /guilds/{guild.id}/auto-moderation/rules. caps/emoji/block-links are custom heuristics for bots — not native AutoMod.' }, null, 2);
+  if (window.PCKJSON) PCKJSON.setPretty($('out'), $('out').textContent);
 }
 ['msg','keywords','allow','regex','mentions','caps','emoji','links'].forEach(id => $(id).oninput = $(id).onchange = test);
 $('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent); $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy JSON',1200); };

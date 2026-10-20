@@ -27,6 +27,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
 .dot{width:9px;height:9px;border-radius:99px}.open{background:#3ba55d}.slow{background:#fee75c}.readonly{background:#eb9227}.locked{background:#ed4245}
 ol.steps{font-size:13px;line-height:1.7;color:#d6d6da;margin:8px 0 0 18px;padding:0}ol.steps li{margin-bottom:4px}
 </style>
+  <script src="/assets/jsonview.js"></script>
 </head>
 <body>
 <div id="pck-nav"></div>
@@ -50,7 +51,7 @@ ol.steps{font-size:13px;line-height:1.7;color:#d6d6da;margin:8px 0 0 18px;paddin
     </div>
     <div class="card"><h3>Bot config export</h3>
       <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" data-pck-feature="inbox" style="flex:1">📬 Mail plan</button></div>
-      <details style="margin-top:8px"><summary style="font-size:11px;color:var(--m);cursor:pointer">View raw JSON</summary><pre class="out" id="out" style="margin-top:8px"></pre></details>
+      <pre class="out" id="out"></pre>
     </div>
     <div class="card"><h3>How to apply this</h3>
       <div class="hint">1. Fill in <b>Server</b> + <b>Channel IDs</b> + exempt role names. 2. 📬 Mail plan — mods open the inbox card and hit <b>⚡ Apply via bot</b> (sets slowmode + @everyone overwrites, re-allows exempt roles; bot needs <b>Manage Channels</b>; every apply is audited + logged). 3. <b>Manual</b>: per channel Edit Channel → Overview → Slowmode; Permissions → @everyone → <b>deny</b> each permission under <code>deny_everyone</code>; re-allow your mod roles. 4. Post a notice in #announcements.</div>
@@ -101,6 +102,7 @@ function render(){
   const exempt = $('exempt').value.split(',').map(s => s.trim()).filter(Boolean);
   $('out').textContent = JSON.stringify({ tool:'lockdown-plan', version:1, exported_at:new Date().toISOString(), server: $('server').value || undefined, exempt_roles: exempt,
     channels: rows.map(r => ({ channel: r.ch, channel_id: String(r.id || '').trim() || undefined, mode: r.mode, slowmode_seconds: r.s, deny_everyone: MODES[r.mode].deny, schedule_note: r.note || '' })) }, null, 2);
+  if (window.PCKJSON) PCKJSON.setPretty($('out'), $('out').textContent);
 }
 document.querySelectorAll('.preset').forEach(p => p.onclick = () => {
   const m = p.dataset.p;

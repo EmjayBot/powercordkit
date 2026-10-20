@@ -30,6 +30,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
 .slot{display:flex;align-items:center;gap:10px;font-size:12px;padding:8px 10px;background:var(--p2);border:1px solid var(--bd);border-radius:8px;margin-bottom:6px}
 .bar{height:8px;border-radius:99px;background:var(--b);min-width:8px}
 </style>
+  <script src="/assets/jsonview.js"></script>
 </head>
 <body>
 <div id="pck-nav"></div>
@@ -59,7 +60,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
   <div>
     <div class="card"><h3>Bot config export</h3>
       <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" data-pck-feature="inbox" style="flex:1">📬 Mail plan</button></div>
-      <details style="margin-top:8px"><summary style="font-size:11px;color:var(--m);cursor:pointer">View raw JSON</summary><pre class="out" id="out" style="margin-top:8px"></pre></details>
+      <pre class="out" id="out"></pre>
       <div class="hint">Hand this JSON to your bot dev, or mail it to the mod inbox — mods apply it from the inbox card.</div>
     </div>
     <div class="card"><h3>How to apply this</h3><div class="hint">1. Fill in <b>Server</b> + <b>Channel IDs</b> so the plan is actionable. 2. 📬 Mail plan — mods open the inbox card and hit <b>⚡ Apply via bot</b> (bot needs Manage Channels; every apply is audited + logged). 3. <b>Night schedule</b> (mods): save a UTC window below and the bot flips day/night values by itself — needs a frequent Worker cron. 4. <b>Manual</b>: right-click → Edit Channel → Overview → set <b>Slowmode</b> to the seconds shown.</div></div>
@@ -106,6 +107,7 @@ function render(){
   }).join('') || '<span style="color:var(--m);font-size:12px">No channels.</span>';
   $('out').textContent = JSON.stringify({ tool:'slowmode-planner', version:1, exported_at:new Date().toISOString(), server: $('server').value || undefined,
     channels: rows.map(r => ({ channel: r.ch, channel_id: String(r.id || '').trim() || undefined, slowmode_seconds: r.s, schedule: r.note || '' })) }, null, 2);
+  if (window.PCKJSON) PCKJSON.setPretty($('out'), $('out').textContent);
 }
 document.querySelectorAll('.preset').forEach(p => p.onclick = () => { rows.forEach(r => r.s = +p.dataset.p); render(); });
 $('add').onclick = () => { rows.push({ch:'#new-channel', id:'', s:5, note:''}); render(); };

@@ -39,6 +39,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
 .frow{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:10px;margin-top:8px}
 .count{font-size:10px;color:var(--m);float:right}
 </style>
+  <script src="/assets/jsonview.js"></script>
 </head>
 <body>
 <div id="pck-nav"></div>
@@ -63,7 +64,7 @@ pre.out{background:#111214;border:1px solid var(--bd);border-radius:8px;padding:
     <div class="card"><h3>Live preview</h3><div class="dmsg"><div class="emb" id="pv"></div></div><div id="valid"></div></div>
     <div class="card"><h3>Export</h3>
       <div class="btnrow"><button class="btn" id="copy">Copy JSON</button><button class="btn ghost" id="dl">Download .json</button><button class="btn ghost" id="mail" data-pck-feature="inbox">📬 Send to Mail</button></div>
-      <details style="margin-top:8px"><summary style="font-size:11px;color:var(--m);cursor:pointer">View raw JSON</summary><pre class="out" id="out" style="margin-top:8px"></pre></details>
+      <pre class="out" id="out"></pre>
     </div>
     <div class="card"><h3>How to apply this</h3>
       <div class="hint" style="font-size:12px;color:var(--m);line-height:1.6">1. Copy JSON — the <code>embeds[0]</code> object is a raw Discord embed. 2. Webhook: <code>curl -X POST "https://discord.com/api/webhooks/&lt;id&gt;/&lt;token&gt;" -H 'Content-Type: application/json' -d '{"embeds":[{...}]}'</code>. 3. Bot code: <code>channel.send({ embeds: [...] })</code>. 4. Limits: title 256, description 4096, 25 fields, 6000 chars total — the validator above checks all four. 5. 📬 Send to Mail files it as a ticket.</div>
@@ -113,6 +114,7 @@ function render(){
   if(total > 6000) errs.push('Embed over 6000 chars total');
   $('valid').innerHTML = errs.length ? errs.map(e=>'<div class="err">✖ '+e+'</div>').join('') : '<div class="okline">✔ Valid — ' + total + ' / 6000 chars, ' + (o.fields||[]).length + ' fields</div>';
   $('out').textContent = JSON.stringify({ embeds: [o] }, null, 2);
+  if (window.PCKJSON) PCKJSON.setPretty($('out'), $('out').textContent);
 }
 document.querySelectorAll('.inp').forEach(el => el.addEventListener('input', render));
 $('f-inline').onchange = render;
