@@ -110,7 +110,7 @@ function toolCard(raw) {
   if (o.tool === 'automod-tester') {
     return chip('automod') + ' <b style="font-size:13px">' + (o.verdict === 'block' ? '⛔ BLOCKED' : '✅ PASS') + '</b>' +
       '<div style="margin-top:8px;font-size:12px">' + esc((o.message || '').slice(0, 300)) + '</div>' +
-      '<div style="margin-top:8px">' + row('Keywords', esc((o.keywords || []).join(', ') || '—')) + row('Regex', esc((o.regex || []).join(' | ') || '—')) + '</div>' +
+      '<div style="margin-top:8px">' + row('Keywords', esc((o.keywords || []).join(', ') || '—')) + row('Regex', esc((o.regex || []).join(' | ') || '—')) + (o.allow_list && o.allow_list.length ? row('Allow', esc(o.allow_list.join(', '))) : '') + '</div>' +
       '<div style="margin-top:8px;font-size:11px;color:var(--m)">Apply: add the keywords/regex to Server Settings → AutoMod → Keyword filter.</div>';
   }
   if (o.tool === 'slowmode-plan') {

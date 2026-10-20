@@ -34,7 +34,8 @@
     <div class="row"><input class="inp" id="sf" placeholder="e.g. 112233445566778899" inputmode="numeric" /><button class="btn" id="go">Decode</button></div>
     <div class="hint">Right-click any user, message, channel or server → <b>Copy ID</b> (enable Developer Mode first). Paste it here to reveal when it was created and which worker made it.</div>
   </div>
-  <div class="card"><h3>Result</h3><div id="out"><span style="color:var(--m);font-size:12px">Nothing decoded yet.</span></div></div>
+  <div class="card"><h3>Result</h3><div id="out"><span style="color:var(--m);font-size:12px">Nothing decoded yet.</span></div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn ghost" id="copy" style="flex:1">Copy result</button></div></div>
   <div class="card"><h3>How snowflakes work</h3>
     <div class="bits"><span class="bt">63…22 timestamp ms since 2015-01-01</span> <span class="bw">21…17 worker id</span> <span class="bp">16…12 process id</span> <span class="bi">11…0 increment</span></div>
     <div class="hint">Discord epoch = 1420070400000 (2015-01-01T00:00:00Z). Created-at = (id >> 22) + epoch. IDs sort by creation time, so a bigger ID is always newer.</div>
@@ -42,6 +43,7 @@
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
+let last = null;
 function decode(){
   const raw = $('sf').value.trim();
   let id;
@@ -52,6 +54,7 @@ function decode(){
   if(isNaN(d.getTime())) return err();
   const worker = (id >> 17n) & 31n, proc = (id >> 12n) & 31n, inc = id & 4095n;
   const bin = id.toString(2).padStart(64,'0');
+  last = { id: raw, created_utc: d.toISOString(), unix_ms: ts, worker_id: String(worker), process_id: String(proc), increment: String(inc) };
   $('out').innerHTML =
     '<div class="kv"><span>Created (UTC)</span><b>'+d.toISOString()+'</b></div>' +
     '<div class="kv"><span>Created (local)</span><b>'+d.toLocaleString()+'</b></div>' +
@@ -62,10 +65,15 @@ function decode(){
     '<div class="kv"><span>Age</span><b>'+age(Date.now()-ts)+'</b></div>' +
     '<div class="bits"><span class="bi">'+bin.slice(0,1)+'</span> <span class="bt">'+bin.slice(1,43)+'</span> <span class="bw">'+bin.slice(43,48)+'</span> <span class="bp">'+bin.slice(48,53)+'</span> <span class="bi">'+bin.slice(53)+'</span></div>';
 }
-function err(){ $('out').innerHTML = '<div class="err">Invalid snowflake — expected 15–20 digits.</div>'; }
+function err(){ last = null; $('out').innerHTML = '<div class="err">Invalid snowflake — expected 15–20 digits.</div>'; }
 function age(ms){ const s=Math.floor(ms/1000); if(s<60) return s+'s old'; const m=Math.floor(s/60); if(m<60) return m+'m old'; const h=Math.floor(m/60); if(h<48) return h+'h old'; const d=Math.floor(h/24); if(d<365) return d+'d old'; return Math.floor(d/365)+'y '+ (d%365) +'d old'; }
 $('go').onclick = decode;
 $('sf').addEventListener('keydown', e => { if(e.key === 'Enter') decode(); });
+$('copy').onclick = () => {
+  if (!last) return alert('Decode an ID first');
+  navigator.clipboard.writeText(JSON.stringify(last, null, 2));
+  $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy result',1200);
+};
 </script>
 <div id="pck-foot"></div>
 <script src="/assets/site.js"></script>

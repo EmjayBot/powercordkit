@@ -32,18 +32,21 @@ label.chk{display:flex;gap:8px;align-items:center;font-size:13px;margin-top:8px}
   <div>
     <div class="card"><h3>Test message</h3>
       <textarea class="inp" id="msg" placeholder="Paste the message to test…">Hey @everyone check out FREE NITRO at http://bit.ly/xyz!!! WIN WIN WIN 🎉🎉🎉🎉🎉</textarea>
-      <div class="row" style="display:flex;gap:8px;margin-top:10px"><div style="flex:1"><label style="font-size:11px;color:var(--m)">Mention limit</label><input class="inp" id="mentions" type="number" min="0" max="50" value="3" /></div>
+      <div style="font-size:11px;color:var(--m);margin-top:10px">Spam heuristics <span style="opacity:.8">— custom, enforced by bots (native AutoMod only does keywords + mention spam)</span></div>
+      <div class="row" style="display:flex;gap:8px;margin-top:6px"><div style="flex:1"><label style="font-size:11px;color:var(--m)">Mention limit</label><input class="inp" id="mentions" type="number" min="0" max="50" value="3" /></div>
       <div style="flex:1"><label style="font-size:11px;color:var(--m)">Caps % over</label><input class="inp" id="caps" type="number" min="0" max="100" value="70" /></div>
       <div style="flex:1"><label style="font-size:11px;color:var(--m)">Max emoji</label><input class="inp" id="emoji" type="number" min="0" max="50" value="5" /></div></div>
       <label class="chk"><input type="checkbox" id="links" checked /> Block links</label>
     </div>
-    <div class="card"><h3>Keyword + regex rules</h3>
-      <label style="font-size:11px;color:var(--m)">Blocked keywords (comma-separated)</label>
-      <input class="inp" id="keywords" value="free nitro, steam gift, airdrop" />
-      <label style="font-size:11px;color:var(--m);margin-top:8px">Regex patterns (one per line, JS syntax)</label>
+    <div class="card"><h3>Keyword + regex rules <span style="font-size:10px;color:var(--m)">mirrors native AutoMod keyword filter</span></h3>
+      <label style="font-size:11px;color:var(--m)">Blocked keywords (comma-separated, <code>*</code> = wildcard)</label>
+      <input class="inp" id="keywords" value="free nitro, steam gift, air*drop" />
+      <label style="font-size:11px;color:var(--m);margin-top:8px">Allowed exceptions — bypass keywords + regex (comma-separated)</label>
+      <input class="inp" id="allow" value="" placeholder="e.g. nitro giveaway (official event)" />
+      <label style="font-size:11px;color:var(--m);margin-top:8px">Regex patterns (one per line, Discord-compatible subset)</label>
       <textarea class="inp" id="regex" style="min-height:70px" placeholder="https?://bit\.ly/\S+&#10;(win\s?){3,}">https?://bit\.ly/\S+
 (win\s?){3,}</textarea>
-      <div class="hint" style="margin-top:8px">Discord keyword filter caps ~1000 keywords / 1000 chars per rule. Keep regexes tight — avoid <code>.*</code> runaway.</div>
+      <div class="hint" style="margin-top:8px">Native caps: ~1000 keywords / 1000 chars per rule. <b>Regex must be RE2-compatible</b> — no look-around <code>(?= ) (?! ) (?&lt;= ) (?&lt;! )</code> or backreferences <code>\1</code>; those are JS-only and Discord rejects the rule. Keep patterns tight — avoid <code>.*</code> runaway.</div>
     </div>
     <div class="card"><h3>Result</h3><div id="results"></div>
       <div style="margin-top:10px"><div style="font-size:12px;color:var(--m);margin-bottom:4px">Highlighted</div><div id="hl" style="font-size:13px;line-height:1.7;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:10px;white-space:pre-wrap"></div></div>
@@ -54,56 +57,94 @@ label.chk{display:flex;gap:8px;align-items:center;font-size:13px;margin-top:8px}
       <div class="btnrow"><button class="btn" id="copy" style="flex:1">Copy JSON</button><button class="btn ghost" id="mail" data-pck-feature="inbox" style="flex:1">📬 Mail rule</button></div>
       <pre class="out" id="out"></pre>
     </div>
-    <div class="card"><h3>How to apply this</h3><div class="hint">1. Copy JSON. 2. Server Settings → AutoMod → Keyword filter → New rule. 3. Paste <b>keywords</b> into blocked words and <b>regex</b> into regex patterns. 4. Set mention/caps/emoji limits from <code>limits</code> using the other AutoMod rule types. 5. Keep regexes tight — avoid <code>.*</code> runaway. 📬 Mail rule files it for review.</div></div>
+    <div class="card"><h3>How to apply this</h3><div class="hint">1. Copy JSON — <code>discord_rule</code> pastes straight into <code>POST /guilds/{id}/auto-moderation/rules</code> (or recreate by hand: Server Settings → AutoMod → Keyword filter → keywords + regex + allow list). 2. Mention limit = the separate <b>Mention Spam preset</b> (<code>mention_total_limit</code>). 3. Caps/emoji/link counts are <b>custom heuristics for bots</b>, not native AutoMod. 4. ⚠️ Fix any RE2 warnings first — Discord rejects JS-only regex. 📬 Mail rule files it for review.</div></div>
   </div>
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+// Discord keyword wildcards: * matches anything (including empty). Plain
+// keywords match case-insensitive substrings, like the native filter.
+function keywordRe(k) {
+  const parts = k.split('*').map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(parts.join('.*?'), 'gi');
+}
+// Discord rejects Rust-regex-incompatible patterns. Flag JS-only constructs
+// so the rule isn't copied over only to fail on save.
+function re2Issues(pattern) {
+  const issues = [];
+  if (/\(\?[=!<]/.test(pattern)) issues.push('look-around (JS-only, Discord rejects)');
+  if (/\\[1-9]/.test(pattern)) issues.push('backreference (JS-only, Discord rejects)');
+  return issues;
+}
 function test(){
   const msg = $('msg').value || '';
   const kws = $('keywords').value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  const allows = ($('allow').value || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
   const regs = $('regex').value.split('\n').map(s => s.trim()).filter(Boolean);
   const hits = [];
   const spans = [];
-  const low = msg.toLowerCase();
-  kws.forEach(k => { const i = low.indexOf(k); if (i >= 0){ hits.push({ rule:'keyword: '+k, ok:false }); spans.push([i, i+k.length]); } });
+  const allowedHit = allows.find((a) => a && msg.toLowerCase().includes(a));
+  kws.forEach(k => {
+    let found = null;
+    try {
+      const re = keywordRe(k);
+      let m;
+      while ((m = re.exec(msg)) !== null){ found = found || [m.index, m.index + m[0].length]; spans.push([m.index, m.index + m[0].length]); if (m.index === re.lastIndex) re.lastIndex++; if (spans.length > 50) break; }
+    } catch (e) { hits.push({ rule:'keyword: '+k, ok:true, native:true, err:String(e).slice(0,120) }); return; }
+    if (found) { hits.push({ rule:'keyword: '+k + (k.includes('*') ? ' (wildcard)' : ''), ok:false, native:true }); }
+  });
   regs.forEach((r,idx) => {
+    const compat = re2Issues(r);
     try {
       const re = new RegExp(r, 'gi');
       let m, found = false;
       while ((m = re.exec(msg)) !== null){ found = true; spans.push([m.index, m.index + m[0].length]); if (m.index === re.lastIndex) re.lastIndex++; if (spans.length > 50) break; }
-      hits.push({ rule:'regex['+(idx+1)+']: '+r, ok:!found });
-    } catch(e){ hits.push({ rule:'regex['+(idx+1)+']: '+r, ok:true, err:String(e).slice(0,120) }); }
+      hits.push({ rule:'regex['+(idx+1)+']: '+r, ok:!found, native:true, warn:compat.length ? compat.join('; ') : '' });
+    } catch(e){ hits.push({ rule:'regex['+(idx+1)+']: '+r, ok:true, native:true, err:String(e).slice(0,120) }); }
   });
+  if (allowedHit) hits.push({ rule:'allow-list hit: "'+allowedHit+'" — keywords + regex bypassed', ok:true });
+  const exempt = !!allowedHit;
+  if (exempt) hits.forEach((h) => { if (h.native && !h.ok) { h.ok = true; h.rule += ' (bypassed)'; } });
   const mentions = (msg.match(/@everyone|@here|<@!?\d+>|<#\d+>/g) || []).length;
   const mMax = +$('mentions').value || 0;
-  hits.push({ rule:'mentions ≤ '+mMax+' (found '+mentions+')', ok: mentions <= mMax });
+  hits.push({ rule:'mentions ≤ '+mMax+' (found '+mentions+') → native Mention Spam preset', ok: mentions <= mMax });
   const letters = (msg.match(/[A-Za-z]/g) || []).length;
   const caps = (msg.match(/[A-Z]/g) || []).length;
   const pct = letters ? Math.round(caps/letters*100) : 0;
   const capMax = +$('caps').value || 100;
-  hits.push({ rule:'caps '+pct+'% ≤ '+capMax+'%', ok: pct <= capMax });
+  hits.push({ rule:'caps '+pct+'% ≤ '+capMax+'% (custom, bot-only)', ok: pct <= capMax });
   const emojis = (msg.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu) || []).length;
   const eMax = +$('emoji').value || 99;
-  hits.push({ rule:'emoji '+emojis+' ≤ '+eMax, ok: emojis <= eMax });
+  hits.push({ rule:'emoji '+emojis+' ≤ '+eMax+' (custom, bot-only)', ok: emojis <= eMax });
   if ($('links').checked){
     const hasLink = /https?:\/\/\S+/i.test(msg);
     hits.push({ rule:'no links', ok: !hasLink });
     if (hasLink){ const m = msg.match(/https?:\/\/\S+/i); spans.push([m.index, m.index + m[0].length]); }
   }
+  const nativeBlocked = hits.some((h) => h.native && !h.ok);
   const blocked = hits.some(h => !h.ok);
-  $('results').innerHTML = '<div style="font-size:14px;font-weight:800;margin-bottom:8px">' + (blocked ? '⛔ BLOCKED' : '✅ PASS') + '</div>' +
-    hits.map(h => '<div class="rule '+(h.ok?'pass':'block')+'">' + (h.ok?'✅ ':'⛔ ') + esc(h.rule) + (h.err ? '<div style="font-size:11px;color:var(--m)">'+esc(h.err)+'</div>' : '') + '</div>').join('');
+  const verdict = exempt ? '✅ PASS (allowed)' : (blocked ? (nativeBlocked ? '⛔ BLOCKED (native rule hits)' : '⛔ BLOCKED (custom heuristics only)') : '✅ PASS');
+  $('results').innerHTML = '<div style="font-size:14px;font-weight:800;margin-bottom:8px">' + verdict + '</div>' +
+    hits.map(h => '<div class="rule '+(h.ok?'pass':'block')+'">' + (h.ok?'✅ ':'⛔ ') + esc(h.rule) + (h.err ? '<div style="font-size:11px;color:var(--m)">'+esc(h.err)+'</div>' : '') + (h.warn ? '<div style="font-size:11px;color:#fee75c">⚠️ '+esc(h.warn)+'</div>' : '') + '</div>').join('');
   spans.sort((a,b) => a[0]-b[0]);
   let out = '', last = 0;
   spans.forEach(([a,b]) => { if (a < last) return; out += esc(msg.slice(last, a)) + '<mark>' + esc(msg.slice(a, b)) + '</mark>'; last = b; });
   out += esc(msg.slice(last));
   $('hl').innerHTML = out || '<span style="color:var(--m)">Empty</span>';
-  $('out').textContent = JSON.stringify({ tool:'automod-tester', version:1, exported_at:new Date().toISOString(), verdict: blocked ? 'block' : 'pass',
-    message: msg.slice(0,2000), keywords: kws, regex: regs, limits: { mentions: mMax, caps_percent: capMax, emoji: eMax, block_links: $('links').checked } }, null, 2);
+  const keywordFilter = kws.slice(0, 1000);
+  const regexPatterns = regs.slice(0, 10);
+  const allowList = allows.slice(0, 100);
+  $('out').textContent = JSON.stringify({ tool:'automod-tester', version:2, exported_at:new Date().toISOString(), verdict: exempt ? 'pass-allowed' : (blocked ? 'block' : 'pass'),
+    message: msg.slice(0,2000), keywords: kws, allow_list: allows, regex: regs,
+    limits: { mentions: mMax, caps_percent: capMax, emoji: eMax, block_links: $('links').checked },
+    discord_rule: { name: 'PowerCordKit rule', event_type: 1, trigger_type: 1,
+      trigger_metadata: { keyword_filter: keywordFilter, regex_patterns: regexPatterns, allow_list: allowList },
+      actions: [{ type: 1 }], enabled: false },
+    mention_spam_preset: { trigger_type: 3, mention_total_limit: mMax },
+    note: 'discord_rule pastes straight into POST /guilds/{guild.id}/auto-moderation/rules. caps/emoji/block-links are custom heuristics for bots — not native AutoMod.' }, null, 2);
 }
-['msg','keywords','regex','mentions','caps','emoji','links'].forEach(id => $(id).oninput = $(id).onchange = test);
+['msg','keywords','allow','regex','mentions','caps','emoji','links'].forEach(id => $(id).oninput = $(id).onchange = test);
 $('copy').onclick = () => { navigator.clipboard.writeText($('out').textContent); $('copy').textContent = 'Copied ✓'; setTimeout(()=>$('copy').textContent='Copy JSON',1200); };
 $('mail').onclick = async () => {
   const r = await fetch('/api/inbox', { method:'POST', headers:{'Content-Type':'application/json'},
