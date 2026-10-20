@@ -160,6 +160,17 @@
     // pages must skip Discord-login redirects AND mod-key prompt() popups and
     // fail closed into demo/offline states instead.
     try { return !(window.PCK && window.PCK.config && window.PCK.config.features && window.PCK.config.features.login === false); } catch (e) { return true; }
+  }, whenReady: function () {
+    // Resolves once site config is loaded (PCK.ready). Pages await this
+    // before deciding to prompt: on first paint a 401 can arrive before the
+    // config fetch resolves, and prompting before we know the flag is wrong.
+    try { if (window.PCK && window.PCK.ready) return Promise.resolve(); } catch (e) { return Promise.resolve(); }
+    return new Promise(function (res) {
+      var n = 0;
+      var t = setInterval(function () {
+        if ((window.PCK && window.PCK.ready) || ++n > 60) { clearInterval(t); res(); }
+      }, 50);
+    });
   } };
   function merge(a, b) {
     var o = {}, k;

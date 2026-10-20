@@ -121,6 +121,7 @@ async function api(path, opts) {
   let r = await fetch(path, Object.assign({}, opts, { headers }));
   if (r.status === 401) {
     if (window.PCK && !window.PCK.authUI()) return r; // auth UI off: fail closed, no redirects or key popups
+    if (window.PCK && window.PCK.whenReady) { await window.PCK.whenReady(); if (!window.PCK.authUI()) return r; } // first paint: config may still be loading
     let info = {};
     try { info = await r.clone().json(); } catch (e) {}
     if (info.login) { window.location.href = '/api/auth/login'; return r; }
