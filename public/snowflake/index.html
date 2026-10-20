@@ -38,7 +38,7 @@
     <div style="display:flex;gap:8px;margin-top:12px"><button class="btn ghost" id="copy" style="flex:1">Copy result</button></div></div>
   <div class="card"><h3>How snowflakes work</h3>
     <div class="bits"><span class="bt">63…22 timestamp ms since 2015-01-01</span> <span class="bw">21…17 worker id</span> <span class="bp">16…12 process id</span> <span class="bi">11…0 increment</span></div>
-    <div class="hint">Discord epoch = 1420070400000 (2015-01-01T00:00:00Z). Created-at = (id >> 22) + epoch. IDs sort by creation time, so a bigger ID is always newer.</div>
+    <div class="hint">Discord epoch = 1420070400000 (2015-01-01T00:00:00Z). Created-at = (id >> 22) + epoch. IDs sort by creation time, so a bigger ID is always newer. <b>Worker / process / increment</b> exist so thousands of Discord backend machines can mint IDs in the same millisecond without colliding: worker (0–31) = which ID-generator made it, process (0–31) = which process on that box, increment (0–4095) = per-millisecond counter. Internal only — not a server, shard, or anything about the user.</div>
   </div>
 </div>
 <script>
