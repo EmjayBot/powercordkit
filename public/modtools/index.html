@@ -120,6 +120,7 @@ async function api(path, opts) {
   const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
   let r = await fetch(path, Object.assign({}, opts, { headers }));
   if (r.status === 401) {
+    if (window.PCK && !window.PCK.authUI()) return r; // auth UI off: fail closed, no redirects or key popups
     let info = {};
     try { info = await r.clone().json(); } catch (e) {}
     if (info.login) { window.location.href = '/api/auth/login'; return r; }

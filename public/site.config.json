@@ -1,5 +1,5 @@
 {
-  "$comment": "Single identity for this deployment (Tools + Mail). Edit brand/links/accent here, or point configUrl at a raw GitHub file to edit it live without redeploying. Features gate sections/cards/nav AND the tools-only build (scripts/build-tools.mjs prunes disabled routes). Presets: tools-only {tools:true,inbox:false,modtools:false,ideas:false,roadmap:false}, everything {all true}, command-only {tools:false,inbox:false,modtools:true}. Per-lab: features.labs.{embeds,color,markdown,timestamp,snowflake,webhook,slowmode,permissions,lockdown,giveaways,automod}. PowerCordKit marketing/hero does NOT belong on this site.",
+  "$comment": "Single identity for this deployment (Tools + Mail). Edit brand/links/accent here, or point configUrl at a raw GitHub file to edit it live without redeploying. Features gate sections/cards/nav AND the tools-only build (scripts/build-tools.mjs prunes disabled routes). Presets: tools-only {tools:true,inbox:false,modtools:false,ideas:false,roadmap:false}, everything {all true}, command-only {tools:false,inbox:false,modtools:true}. Per-lab: features.labs.{...}. login:false hides Discord-login links AND disables mod-key prompt() popups + login redirects (marketing/showcase sites: visitors get read-only demo, mods work on the community deploy). PowerCordKit marketing/hero does NOT belong on this site.",
   "siteName": "Community Toolset",
   "tagline": "Discord mod tools and a unified mail inbox.",
   "accent": "#5865F2",
@@ -12,6 +12,7 @@
     "modtools": true,
     "ideas": true,
     "roadmap": true,
+    "login": true,
     "labs": {
       "embeds": true,
       "color": true,
@@ -29,7 +30,7 @@
   "environments": {
     "personal": {
       "siteName": "PowerCordKit",
-      "features": { "mailSetup": true },
+      "features": { "mailSetup": true, "login": false },
       "header": {
         "brand": "PowerCordKit",
         "links": [

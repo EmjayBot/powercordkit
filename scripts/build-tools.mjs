@@ -55,6 +55,7 @@ const showInbox = features.inbox !== false;
 const showIdeas = features.ideas !== false;
 const showRoadmap = features.roadmap !== false;
 const showModtools = features.modtools !== false;
+const showLogin = features.login !== false;
 // Canonical lab slugs (must match public/<slug>/ folders + data-pck-lab).
 const ALL_LABS = ['embeds','color','markdown','timestamp','snowflake','webhook','slowmode','permissions','lockdown','giveaways','automod'];
 const labsOff = features.labs && typeof features.labs === 'object' ? Object.keys(features.labs).filter((k) => features.labs[k] === false) : [];
@@ -163,7 +164,7 @@ writeFileSync(
     {
       siteName: identity.siteName,
       accent: identity.accent,
-      features: { tools: showTools, inbox: showInbox, modtools: showModtools, ideas: showIdeas, roadmap: showRoadmap, mailSetup: showSetup, labs: labsOut },
+      features: { tools: showTools, inbox: showInbox, modtools: showModtools, ideas: showIdeas, roadmap: showRoadmap, mailSetup: showSetup, login: showLogin, labs: labsOut },
       header: {
         brand,
         logo,

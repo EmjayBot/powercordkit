@@ -13,12 +13,24 @@
     { id: 'demo-5', server: 'main', type: 'idea', tag: 'idea', author: 'maren', title: 'QOTD channel for lore drops', content: 'A daily question-of-the-day thread to surface old lore. Low effort, high engagement?', time: '2d ago', prio: 'low', src: 'discord', by: 'idea-capture', url: '#', assigned: null, archived: 0, notes: [] },
     { id: 'demo-6', server: 'appeals', type: 'appeal', tag: 'appeal', author: '472819304756123456', title: 'Appeal for ban a1b2c3d4', content: '{"apology":"I didn\'t know ads weren\'t allowed, won\'t happen again","rule_read":true}', time: '2d ago', prio: 'high', src: 'discord', by: 'appeal', url: '#', assigned: null, archived: 0, notes: [] }
   ];
+  function loginLink() {
+    // Only link to Discord login once site config is loaded AND this
+    // deployment leaves auth UI on (features.login !== false). Otherwise the
+    // link would 503 ("Login not configured") on marketing-style sites.
+    try {
+      if (window.PCK && window.PCK.ready && window.PCK.authUI && window.PCK.authUI()) {
+        return ' <a href="/api/auth/login" style="font-size:11px;color:#8b96f8">Log in for the live inbox →</a>';
+      }
+    } catch (e) {}
+    return '';
+  }
   function banner() {
-    return '<span class="pill" style="border-color:rgba(88,101,242,.5);color:#8b96f8">Demo preview — sample data</span> <a href="/api/auth/login" style="font-size:11px;color:#8b96f8">Log in with Discord for the live inbox →</a>';
+    return '<span class="pill" style="border-color:rgba(88,101,242,.5);color:#8b96f8">Demo preview — sample data</span>' + loginLink();
   }
   window.PCKDemo = {
     items: items,
     banner: banner,
+    loginLink: loginLink,
     enter: function () { window.__pckDemo = true; },
     isDemo: function () { return !!window.__pckDemo; },
     // Call first in any mutating handler. Returns true when the action must

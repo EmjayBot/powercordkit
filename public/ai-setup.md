@@ -41,6 +41,7 @@ Goal: help a user **self-host the Mail inbox** end to end.
     }
     ```
     `features.tools` shows/hides the Labs hub, `features.inbox` the Community Inbox (nav + hub), `features.modtools` the Command console, `features.ideas` / `features.roadmap` the Ideas / Roadmap cards. `mailSetup: false` turns the setup guide off once you're set up (link, hub card, and the guide page itself).
+    `features.login: false` hides Discord-login links AND disables mod-key `prompt()` popups + login redirects — marketing/showcase sites stay read-only demo (the template's `personal` environment ships this way; working community deploys keep the default `true`).
     Per-lab: `features.labs.{embeds,color,markdown,timestamp,snowflake,webhook,slowmode,permissions,lockdown,giveaways,automod}` hides individual tool cards + nav links. Presets:
     - tools-only: `{tools:true, inbox:false, modtools:false, ideas:false, roadmap:false}`
     - everything: all `true`

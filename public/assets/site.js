@@ -155,7 +155,12 @@
     var r = document.getElementById('pck-right');
     if (r) r.innerHTML = html;
   }
-  window.PCK = { config: {}, right: right };
+  window.PCK = { config: {}, right: right, authUI: function () {
+    // False when the deployment turned auth UI off (features.login === false):
+    // pages must skip Discord-login redirects AND mod-key prompt() popups and
+    // fail closed into demo/offline states instead.
+    try { return !(window.PCK && window.PCK.config && window.PCK.config.features && window.PCK.config.features.login === false); } catch (e) { return true; }
+  } };
   function merge(a, b) {
     var o = {}, k;
     for (k in a) if (Object.prototype.hasOwnProperty.call(a, k)) o[k] = a[k];
@@ -190,14 +195,24 @@
           var envCfg = env && cfg.environments && cfg.environments[env];
           if (envCfg && typeof envCfg === 'object') {
             var baseHeader = cfg.header || {};
+            var baseFeatures = cfg.features || {};
+            var baseLabs = (baseFeatures && baseFeatures.labs) || {};
             cfg = merge(cfg, envCfg);
             cfg.header = merge(baseHeader, envCfg.header || {});
+            // Deep-merge features (shallow merge would wipe the whole block
+            // when an environment only overrides one flag, e.g. login).
+            cfg.features = merge(baseFeatures, (envCfg.features || {}));
+            var envLabs = (envCfg.features && envCfg.features.labs) || {};
+            if (Object.keys(baseLabs).length || Object.keys(envLabs).length) {
+              cfg.features.labs = merge(baseLabs, envLabs);
+            }
           }
           if (cfg.accent) {
             document.documentElement.style.setProperty('--pck-b', cfg.accent);
             document.documentElement.style.setProperty('--b', cfg.accent);
           }
           window.PCK.config = cfg;
+          window.PCK.ready = true;
           if (document.body && document.body.hasAttribute('data-pck-title')) {
             document.title = cfg.siteName || (cfg.header && cfg.header.brand) || document.title;
           }

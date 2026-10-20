@@ -89,6 +89,7 @@ async function api(path, opts) {
   const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
   let r = await fetch(path, Object.assign({}, opts, { headers }));
   if (r.status === 401) {
+    if (window.PCK && !window.PCK.authUI()) return r; // auth UI off: fail closed, no redirects or key popups
     let info = {};
     try { info = await r.clone().json(); } catch (e) {}
     if (info.login) { window.__pckLogin = true; return r; }
@@ -141,7 +142,7 @@ async function load(){
       const host = location.host;
       const items = window.PCKDemo.items;
       setPills('Demo preview', 'live', host);
-      $('host').innerHTML = 'showing <b>demo data</b> — <a href="/api/auth/login" style="color:#8b96f8">log in</a> for the live inbox';
+      $('host').innerHTML = 'showing <b>demo data</b>' + (window.PCKDemo.loginLink ? window.PCKDemo.loginLink().replace(/^ /, ' — ') : '');
       $('s-open').textContent = items.length;
       $('s-tickets').textContent = items.filter(i => i.type === 'ticket').length;
       $('s-ideas').textContent = items.filter(i => i.type === 'idea').length;
@@ -156,7 +157,7 @@ async function load(){
     setPills('Locked', 'off', window.__pckLogin ? 'signed out' : 'mod key required');
     $('s-open').textContent = '–'; $('s-tickets').textContent = '–'; $('s-ideas').textContent = '–'; $('s-unassigned').textContent = '–';
     const locked = window.__pckLogin
-      ? '<div class="empty">🔒 Sign in to load the inbox.<br/><a href="/api/auth/login" style="display:inline-block;margin-top:8px;background:#5865F2;color:#fff;text-decoration:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700">Log in with Discord</a></div>'
+      ? '<div class="empty">🔒 Sign in to load the inbox.<br/><a href="/api/auth/login" data-pck-feature="login" style="display:inline-block;margin-top:8px;background:#5865F2;color:#fff;text-decoration:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700">Log in with Discord</a></div>'
       : '<div class="empty">🔒 Enter the mod key to load.<br/><button class="unlock-btn" style="margin-top:8px;background:#5865F2;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer">Enter mod key</button><div style="margin-top:10px;font-size:11px;opacity:.6">API: ' + esc(code) + '</div></div>';
     $('c-tickets').innerHTML = locked; $('c-ideas').innerHTML = locked; $('c-recent').innerHTML = locked;
     document.querySelectorAll('.unlock-btn').forEach((b) => b.onclick = () => { window.__pckLocked = false; sessionStorage.removeItem('pck-mod-key'); load(); });
