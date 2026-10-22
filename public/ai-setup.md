@@ -86,6 +86,14 @@ cd powercordkit
 npm install
 ```
 
+> **Where your values live (manual users, read this).** The committed
+> `wrangler.community.jsonc` is a template with placeholders — don't deploy from it
+> directly. Copy it once to the gitignored private file `wrangler.community.local.jsonc`,
+> fill in your IDs there, and use the `:local` scripts (`npm run dev:community:local`,
+> `npm run deploy:community:local`, `npm run db:migrate:remote:community:local`).
+> That way `git pull` picks up template updates without ever overwriting your config.
+> (PowerShell: `Copy-Item wrangler.community.jsonc wrangler.community.local.jsonc`.)
+
 ### 2. Database
 ```powershell
 npm run db:create:community
@@ -212,6 +220,14 @@ works across isolates).
 **Config**
 - `MOD_TOOL_SERVERS` (wrangler var, JSON): map of `"<slug>": { "guild": "<guild-id>" }`
   for each server you moderate via Discord.
+  **Manual setup (no AI) — three steps:**
+  1. In `wrangler.community.local.jsonc` → `"vars"`, add (one entry per guild):
+     `"MOD_TOOL_SERVERS": "{\"my-server\": {\"guild\": \"<guild-id>\"}}"`
+     The value is a JSON string, so the inner quotes are backslash-escaped.
+  2. Redeploy: `npm run deploy:community:local` (logged in as the community account).
+  3. Verify: `GET /api/modtools/servers` (mod session or `X-Mod-Key` header) should list
+     your slugs, and `/modtools/` shows them in the server picker. An empty list means
+     the var didn't deploy — re-check the escaping and redeploy.
 - Secrets: if syncing suspends to Discourse, add `DISCOURSE_BASE_URL` and
   `DISCOURSE_ADMIN_KEY` (Admin → API → Create key, `suspend` permission).
 - Identity linking (Discord <-> forum, different usernames OK):
