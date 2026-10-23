@@ -48,10 +48,12 @@ type Bindings = {
   DISCOURSE_BASE_URL?: string;
   DISCOURSE_ADMIN_KEY?: string;
   // Cold archive (long-term notes/reasons outside D1 to stay on free tier):
-  // GitHub private repo is truth (structured issues), Discord webhook is mirror.
+  // GitHub private repo is truth (structured issues), Discord webhook is mirror,
+  // staff-only Discourse subcategory is the browsable paper trail.
   ARCHIVE_GITHUB_TOKEN?: string;
   ARCHIVE_GITHUB_REPO?: string; // "owner/repo"
   ARCHIVE_DISCORD_WEBHOOK_URL?: string;
+  DISCOURSE_ARCHIVE_CATEGORY_ID?: string; // staff subcategory id for archived items
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -440,25 +442,54 @@ app.get('/api/health', (c) => {
 });
 
 // Public roadmap: promoted ideas with status + target date (read-only).
+// Scope: authed mods get the FULL board (?scope=full or default); logged-out
+// visitors only ever see items flagged roadmap_public=1 (or 401 when
+// PUBLIC_ROADMAP=0, enforced by the auth middleware above).
+async function isModRequest(c: {
+  req: { header: (n: string) => string | undefined };
+  env: Bindings;
+}): Promise<boolean> {
+  const sess = c.env.SESSION_SECRET;
+  if (sess) {
+    const cookie = readCookie(c.req.header('cookie'), 'pck_session');
+    if (await verifySession(cookie, sess)) return true;
+  }
+  const key = c.env.MOD_API_KEY;
+  if (key && (await timingSafeEqualString(c.req.header('X-Mod-Key') ?? '', key))) return true;
+  const team = c.env.ACCESS_TEAM_DOMAIN;
+  const aud = c.env.ACCESS_AUD;
+  if (team && aud) {
+    const jwt = c.req.header('Cf-Access-Jwt-Assertion') ?? null;
+    if (await verifyAccessJwt(jwt, team, aud)) return true;
+  }
+  return false;
+}
+
 app.get('/api/roadmap', async (c) => {
   try {
+    const mod = await isModRequest(c);
+    const scope = c.req.query('scope') ?? '';
+    if (scope === 'full' && !mod) {
+      return Response.json({ ok: false, error: 'Login required' }, { status: 401 });
+    }
+    const full = mod && scope !== 'public';
     const res = await c.env.DB.prepare(
-      `SELECT id, server, type, tag, author, title, content, url, roadmap_status, roadmap_date, created_at
-       FROM inbox_items WHERE roadmap = 1
+      `SELECT id, server, type, tag, author, title, content, url, roadmap_status, roadmap_date, roadmap_public, created_at
+       FROM inbox_items WHERE roadmap = 1 ${full ? '' : 'AND roadmap_public = 1 '}
        ORDER BY (roadmap_date = '') ASC, roadmap_date ASC, created_at DESC`,
     ).all<Record<string, unknown>>();
-    return c.json({ ok: true, items: res.results ?? [] });
+    return c.json({ ok: true, scope: full ? 'full' : 'public', items: res.results ?? [] });
   } catch (err) {
     jsonLog('error', 'roadmap list failed', { error: String(err) });
     return bad('Failed to load roadmap', 500);
   }
 });
 
-// Promote/update a roadmap entry (status, target date, or remove).
+// Promote/update a roadmap entry (status, target date, public flag, or remove).
 app.post('/api/inbox/:id/roadmap', async (c) => {
   try {
     const id = c.req.param('id');
-    const body = await readJson<{ roadmap?: boolean; status?: string; date?: string }>(c);
+    const body = await readJson<{ roadmap?: boolean; status?: string; date?: string; public?: boolean }>(c);
     const sets: string[] = [];
     const binds: unknown[] = [];
     if (typeof body.roadmap === 'boolean') {
@@ -475,6 +506,11 @@ app.post('/api/inbox/:id/roadmap', async (c) => {
       if (!sets.includes('roadmap = 1')) sets.push('roadmap = 1');
       sets.push('roadmap_date = ?');
       binds.push(body.date.slice(0, 32));
+    }
+    if (typeof body.public === 'boolean') {
+      if (!sets.includes('roadmap = 1')) sets.push('roadmap = 1');
+      sets.push('roadmap_public = ?');
+      binds.push(body.public ? 1 : 0);
     }
     if (sets.length === 0) return bad('nothing to update', 400);
     const r = await c.env.DB.prepare(`UPDATE inbox_items SET ${sets.join(', ')} WHERE id = ?`)
@@ -571,7 +607,7 @@ app.post('/api/inbox', async (c) => {
       author: (body.author ?? 'you').slice(0, 80),
       title: body.title.slice(0, 300),
       content: (body.content ?? '').slice(0, 20000),
-      time: 'now',
+      time: new Date().toISOString(),
       prio: (body.prio ?? 'normal').slice(0, 16),
       src: (body.src ?? 'discord').slice(0, 32),
       by: (body.by ?? 'manual').slice(0, 80),
@@ -932,7 +968,7 @@ app.post('/hooks/discourse', async (c) => {
       author: String(author).slice(0, 80),
       title: String(title).slice(0, 300),
       content,
-      time: 'now',
+      time: new Date().toISOString(),
       prio: 'normal',
       src: 'discourse',
       by: 'discourse-webhook',
@@ -980,7 +1016,7 @@ app.post('/hooks/discord', async (c) => {
       author: (body.author ?? 'discord').slice(0, 80),
       title: body.title.slice(0, 300),
       content: (body.content ?? '').slice(0, 20000),
-      time: 'now',
+      time: new Date().toISOString(),
       prio: (body.prio ?? 'normal').slice(0, 16),
       src: 'discord',
       by: (body.by ?? 'discord-bot').slice(0, 80),
@@ -1013,6 +1049,12 @@ app.post('/hooks/discord', async (c) => {
     return bad('Webhook failed', 500);
   }
 });
+
+// Mod tools router (Ban Sync, Timeouts, Infractions, Appeals, Notes, DM, records).
+// Mounted BEFORE the generic POST /hooks/:name below: Hono matches overlapping
+// routes in registration order, so the param route would otherwise swallow
+// POST /hooks/appeal* ("Unknown adapter: appeal").
+app.route('/', modTools);
 
 // Generic forum adapter webhook: POST /hooks/:name (ForumAdapter registry).
 // Built-ins: discord, discourse (also reachable as static routes above, which take
@@ -1072,6 +1114,16 @@ app.get('/api/servers', async (c) => {
       server: string;
     }>();
     const locked = new Set((toks.results ?? []).map((t) => t.server));
+    // Display names from MOD_TOOL_SERVERS ("slug": {"guild", "name"}); fall back to the slug.
+    let names: Record<string, string> = {};
+    try {
+      const map = JSON.parse(c.env.MOD_TOOL_SERVERS ?? '{}');
+      for (const [slug, cfg] of Object.entries<any>(map || {})) {
+        if (cfg && typeof cfg.name === 'string' && cfg.name) names[slug] = cfg.name;
+      }
+    } catch {
+      /* vars without display names */
+    }
     const typeRes = await c.env.DB.prepare(
       `SELECT type, SUM(CASE WHEN archived = 0 THEN 1 ELSE 0 END) AS n FROM inbox_items GROUP BY type ORDER BY type`,
     ).all<{ type: string; n: number }>();
@@ -1079,6 +1131,7 @@ app.get('/api/servers', async (c) => {
       ok: true,
       servers: [...map.values()].map((s) => ({
         server: s.server,
+        name: names[s.server] ?? s.server,
         count: s.count,
         types: [...s.types],
         locked: locked.has(s.server),
@@ -1129,9 +1182,6 @@ app.delete('/api/servers/:id/token', async (c) => {
   }
 });
 
-// Mod tools: Ban Sync, Timeouts, Infractions, Appeals, Notes (/api/* + /hooks/appeal).
-app.route('/', modTools);
-
 // Manual cold-archive trigger (mod auth): archives up to 20 purgable items now.
 app.post('/api/admin/archive-now', async (c) => {
   try {
@@ -1140,6 +1190,34 @@ app.post('/api/admin/archive-now', async (c) => {
   } catch (err) {
     jsonLog('error', 'manual archive failed', { error: String(err) });
     return bad('Archive failed', 500);
+  }
+});
+
+// Connectivity check for the Discourse log subcategory (mod auth): posts one
+// clearly-labelled test topic. Verifies base URL + admin key + category id +
+// permissions without touching real data. Safe to delete the topic after.
+app.post('/api/admin/archive-test', async (c) => {
+  try {
+    const base = c.env.DISCOURSE_BASE_URL?.replace(/\/$/, '');
+    const key = c.env.DISCOURSE_ADMIN_KEY;
+    const cat = Number(c.env.DISCOURSE_ARCHIVE_CATEGORY_ID ?? '');
+    if (!base || !key || !cat) {
+      return bad('Discourse archive not configured (need DISCOURSE_BASE_URL + DISCOURSE_ADMIN_KEY + DISCOURSE_ARCHIVE_CATEGORY_ID)', 400);
+    }
+    const r = await fetch(`${base}/posts.json`, {
+      method: 'POST',
+      headers: { 'Api-Key': key, 'Api-Username': 'system', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: '[archive] PowerCordKit archive check — safe to delete',
+        raw: 'Connectivity check from the Mail worker. If you can read this in the staff log subcategory, the cold-archive path works. Safe to delete this topic.',
+        category: cat,
+      }),
+    });
+    const j = await r.json().catch(() => null);
+    return c.json({ ok: r.ok, status: r.status, topic_id: (j as any)?.topic_id ?? null, error: r.ok ? undefined : JSON.stringify(j).slice(0, 300) });
+  } catch (err) {
+    jsonLog('error', 'archive test failed', { error: String(err) });
+    return bad('Archive test failed', 500);
   }
 });
 
@@ -1200,10 +1278,46 @@ async function archiveToDiscord(env: Bindings, items: ArchiveItem[]): Promise<bo
   }
 }
 
+// Staff-only Discourse subcategory as the browsable paper trail: one topic per
+// purged item (title carries server/type for search). Needs DISCOURSE_BASE_URL +
+// DISCOURSE_ADMIN_KEY (same key as suspend sync) + DISCOURSE_ARCHIVE_CATEGORY_ID.
+async function archiveToDiscourse(env: Bindings, items: ArchiveItem[]): Promise<number> {
+  const base = env.DISCOURSE_BASE_URL?.replace(/\/$/, '');
+  const key = env.DISCOURSE_ADMIN_KEY;
+  const cat = Number(env.DISCOURSE_ARCHIVE_CATEGORY_ID ?? '');
+  if (!base || !key || !cat || !items.length) return 0;
+  let done = 0;
+  for (const it of items.slice(0, 10)) {
+    try {
+      const raw = [
+        `**Mod archive** — ${it.server} / ${it.type} | by ${it.author} | created ${it.created_at}`,
+        ``,
+        (it.content || '').slice(0, 8000),
+        ``,
+        ...(it.notes ?? []).slice(0, 10).map((n) => `- note by ${n.by} (${n.created_at}): ${n.text.slice(0, 500)}`),
+      ].join('\n');
+      const r = await fetch(`${base}/posts.json`, {
+        method: 'POST',
+        headers: { 'Api-Key': key, 'Api-Username': 'system', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: `[archive] ${it.server}/${it.type} ${(it.title || '').slice(0, 80)}`,
+          raw: raw.slice(0, 12000),
+          category: cat,
+        }),
+      });
+      if (r.ok) done++;
+      else jsonLog('warn', 'discourse archive failed', { status: r.status, id: it.id });
+    } catch (err) {
+      jsonLog('warn', 'discourse archive error', { error: String(err), id: it.id });
+    }
+  }
+  return done;
+}
+
 async function purgeOld(db: D1Database, env?: Bindings, days = 90): Promise<number> {
   const cutoff = new Date(Date.now() - days * 86400000).toISOString();
   // Archive before delete so reasons/notes survive outside D1.
-  if (env && (env.ARCHIVE_GITHUB_TOKEN || env.ARCHIVE_DISCORD_WEBHOOK_URL)) {
+  if (env && (env.ARCHIVE_GITHUB_TOKEN || env.ARCHIVE_DISCORD_WEBHOOK_URL || (env.DISCOURSE_BASE_URL && env.DISCOURSE_ADMIN_KEY && env.DISCOURSE_ARCHIVE_CATEGORY_ID))) {
     try {
       const rows = await db
         .prepare('SELECT id, server, type, author, title, content, created_at FROM inbox_items WHERE created_at < ? ORDER BY created_at ASC LIMIT 20')
@@ -1219,7 +1333,8 @@ async function purgeOld(db: D1Database, env?: Bindings, days = 90): Promise<numb
         }
         const g = await archiveToGitHub(env, items);
         const d = await archiveToDiscord(env, items);
-        jsonLog('info', 'cold archive complete', { items: items.length, github: g, discord: d });
+        const f = await archiveToDiscourse(env, items);
+        jsonLog('info', 'cold archive complete', { items: items.length, github: g, discord: d, discourse: f });
       }
     } catch (err) {
       jsonLog('warn', 'cold archive failed, proceeding with purge', { error: String(err) });
