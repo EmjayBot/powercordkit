@@ -72,7 +72,7 @@ code{background:var(--p2);border:1px solid var(--bd);border-radius:6px;padding:2
   </div>
 
   <div class="foot">
-    Feeds: Discord context menu → <code>POST /hooks/discord</code> · Discourse webhooks → <code>POST /hooks/discourse</code> · forums via <code>POST /hooks/:name</code> (<code>nodebb</code>, <code>flarum</code>, <code>lemmy</code>, <code>custom</code>)<br/>
+    Feeds: Discord context menu → <code>POST <span class="hook-host"></span>/hooks/discord</code> · Discourse webhooks → <code>POST <span class="hook-host"></span>/hooks/discourse</code> · forums via <code>POST <span class="hook-host"></span>/hooks/:name</code> (<code>nodebb</code>, <code>flarum</code>, <code>lemmy</code>, <code>custom</code>)<br/>
     <a href="/">← All tools</a> · <a href="/mail-setup/" data-pck-feature="mailSetup">How to self-host this inbox</a>
   </div>
 </div>
@@ -117,6 +117,14 @@ let pillState = { api: 'connecting…', cls: 'off', env: '…' };
 function renderPills(){ if (window.PCK) window.PCK.right('<span class="pill">' + esc(pillState.env) + '</span><span class="pill ' + pillState.cls + '">' + esc(pillState.api) + '</span>'); }
 function setPills(api, cls, env){ pillState = { api: api, cls: cls, env: env }; renderPills(); }
 window.PCK_ON_NAV = renderPills;
+async function isCommunityHost() {
+  try {
+    const h = await fetch('/api/health', { cache: 'no-store' }).then((x) => x.json());
+    return !!(h && h.env === 'community');
+  } catch {
+    return false;
+  }
+}
 async function load(){
   try {
     const [h, inbox] = await Promise.all([
@@ -127,6 +135,7 @@ async function load(){
     const host = h.communityDomain || h.personalDomain || location.host;
     setPills('API live', 'live', host);
     $('host').textContent = 'on ' + host;
+    document.querySelectorAll('.hook-host').forEach((el) => { el.textContent = 'https://' + host; });
     const t = items.filter(i => i.type === 'ticket'), ideas = items.filter(i => i.type === 'idea');
     $('s-open').textContent = items.length;
     $('s-tickets').textContent = t.length;
@@ -136,9 +145,9 @@ async function load(){
     col('c-ideas', ideas, 'No ideas yet.');
     col('c-recent', items, 'Inbox Zero 🎉');
   } catch (e) {
-    // Logged-out visitors get a clearly-badged demo instead of a locked screen.
-    // Demo mode is read-only: stats/cards below never POST anywhere.
-    if (window.PCKDemo) {
+    // Production community inbox: login required, never demo data.
+    // (Marketing/personal deploys keep the clearly-badged demo preview.)
+    if (window.PCKDemo && !(await isCommunityHost())) {
       PCKDemo.enter();
       const host = location.host;
       const items = window.PCKDemo.items;

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Appeal a ban</title>
+<link rel="icon" href="/assets/powercordkit_logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90;--ok:#3ba55d;--no:#ed4245}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
+.wrap{max-width:640px;margin:0 auto;padding:32px 16px 80px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--m);font-size:13px;margin:0 0 16px;line-height:1.5}
+.card{background:var(--p);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
+label{display:block;font-size:12px;font-weight:600;color:var(--m);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em}
+textarea,.inp{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:10px;color:var(--t);font-size:13px;outline:none;width:100%;font-family:inherit}
+textarea{min-height:90px;resize:vertical}
+textarea:focus,.inp:focus{border-color:var(--b)}
+select.inp{width:auto;min-width:220px;cursor:pointer}
+.btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:11px 18px;font-size:13px;font-weight:700;cursor:pointer;width:100%}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--t)}
+.check input{margin-top:3px}
+.err{background:rgba(237,66,69,.08);border:1px solid rgba(237,66,69,.4);border-radius:12px;padding:16px;font-size:14px;line-height:1.6}
+.good{background:rgba(59,165,93,.08);border:1px solid rgba(59,165,93,.4);border-radius:12px;padding:24px;font-size:14px;line-height:1.6;text-align:center}
+.dim{color:var(--m);font-size:12px}
+.row{display:flex;gap:8px}.row .inp{flex:1}.row .btn{width:auto;white-space:nowrap}
+.hp{position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}
+</style>
+</head>
+<body>
+<div id="pck-nav"></div>
+<div class="wrap">
+  <h1>📩 Appeal a ban</h1>
+  <p class="sub" id="context">Checking your invite link…</p>
+  <div id="main"></div>
+</div>
+<div id="pck-foot"></div>
+<script src="/assets/site.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const token = new URLSearchParams(location.search).get('token') || '';
+let ctx = { user_id: '', ban_id: '', expires_at: '', ban: null };
+
+async function init() {
+  if (token) return initToken();
+  // No link? Look up by Discord user ID — no invite needed.
+  $('context').textContent = 'No invite link? Enter your Discord user ID to find your ban (enable Developer Mode, right-click yourself, Copy User ID).';
+  $('main').innerHTML =
+    '<div class="card"><label for="f-uid">Your Discord user ID</label><div class="row"><input class="inp" id="f-uid" placeholder="e.g. 123456789012345678" inputmode="numeric" /><button class="btn" id="f-find">Find my ban</button></div>' +
+    '<p class="dim" id="f-status" style="margin:10px 0 0"></p></div>';
+  $('f-find').onclick = lookup;
+}
+
+async function lookup() {
+  const uid = ($('f-uid').value || '').trim();
+  if (!/^\d{10,}$/.test(uid)) { $('f-status').textContent = 'Enter a valid user ID.'; return; }
+  $('f-status').textContent = 'Looking up…';
+  let r;
+  try { r = await fetch('/hooks/appeal-lookup?user_id=' + encodeURIComponent(uid)); }
+  catch (e) { $('f-status').textContent = 'Network error — try again.'; return; }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) { $('f-status').textContent = j.error || ('Failed (HTTP ' + r.status + ')'); return; }
+  ctx.user_id = j.user_id;
+  if (j.bans.length === 1) return showForm(j.bans[0], { eligible_at: j.bans[0].eligible_at });
+  // Several active bans (multi-server): let them pick.
+  $('main').innerHTML = '<div class="card"><label for="f-ban">Pick the ban to appeal</label><div class="row"><select class="inp" id="f-ban">' +
+    j.bans.map((b, i) => '<option value="' + i + '">' + esc((b.servers || []).join(', ') || 'ban') + ' — ' + esc((b.created_at || '').slice(0, 10)) + '</option>').join('') +
+    '</select><button class="btn" id="f-pick">Continue</button></div></div>';
+  window.__appealBans = j.bans;
+  $('f-pick').onclick = () => { const b = window.__appealBans[Number($('f-ban').value) || 0]; showForm(b, { eligible_at: b.eligible_at }); };
+}
+
+async function initToken() {
+  let r;
+  try { r = await fetch('/hooks/appeal-link?token=' + encodeURIComponent(token)); }
+  catch (e) { return fail('Couldn\u2019t reach the server. Check your connection and reload.'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) return fail(esc(j.error || ('Link problem (HTTP ' + r.status + ')')) + '. Ask the mod team for a fresh invite link.');
+  ctx.user_id = j.user_id;
+  showForm(j.ban, { expires_at: j.expires_at, eligible_at: j.eligible_at, appealable: j.appealable });
+}
+
+function showForm(ban, extra) {
+  ctx.ban = ban;
+  ctx.extra = extra || {};
+  ctx.appealOpen = true;
+  const b = ban || {};
+  const eligible = ctx.extra.eligible_at || null;
+  if (eligible && eligible > new Date().toISOString()) { ctx.appealOpen = false; }
+  $('context').innerHTML = 'Appealing as <b>' + esc(ctx.user_id) + '</b> — banned ' + esc((b.created_at || '').slice(0, 10)) + (b.expires_at ? ' · temporary until ' + esc(b.expires_at.slice(0, 10)) : ' · permanent') + (b.servers && b.servers.length ? ' · ' + esc(b.servers.join(', ')) : '') + (ctx.extra.expires_at ? '<br/>This link expires ' + esc(ctx.extra.expires_at.slice(0, 16).replace('T', ' ')) + ' and can be used once.' : '<br/>One appeal per account.') + (ctx.appealOpen ? '' : '<br/><b>Appeals for this ban open ' + esc((ctx.extra.eligible_at || '').slice(0, 10)) + '.</b>');
+  $('main').innerHTML =
+    '<div class="card"><label>Why were you banned? (their note)</label><div>' + esc(b.reason || 'No reason recorded') + '</div></div>' +
+    '<div class="card"><label for="f-what">What happened, in your words</label><textarea id="f-what" placeholder="Explain what led to the ban"></textarea></div>' +
+    '<div class="card"><label for="f-plan">What will you do differently</label><textarea id="f-plan" placeholder="How will you avoid this next time"></textarea></div>' +
+    '<div class="card"><label class="check"><input type="checkbox" id="f-rules" /> I have read the server rules and understand why I was banned.</label></div>' +
+    '<input class="hp" type="text" id="f-website" autocomplete="off" tabindex="-1" />' +
+    '<button class="btn" id="f-send">Submit appeal</button>' +
+    '<p class="dim" id="f-status" style="margin-top:10px"></p>';
+  $('f-send').onclick = submit;
+}
+
+function fail(msg) {
+  $('context').textContent = '';
+  $('main').innerHTML = '<div class="err">' + msg + '</div>';
+}
+
+async function submit() {
+  const btn = $('f-send');
+  btn.disabled = true;
+  $('f-status').textContent = 'Sending…';
+  const answers = {
+    apology: $('f-what').value.trim().slice(0, 2000),
+    plan: $('f-plan').value.trim().slice(0, 2000),
+    rule_read: $('f-rules').checked ? 'yes' : 'no',
+  };
+  if (!answers.apology) { btn.disabled = false; $('f-status').textContent = 'Tell us what happened first.'; return; }
+  if (!ctx.appealOpen) { btn.disabled = false; $('f-status').textContent = 'Appeals for this ban are not open yet.'; return; }
+  const payload = token
+    ? { token, answers, honeypot: $('f-website').value }
+    : { user_id: ctx.user_id, ban_id: (ctx.ban && ctx.ban.ban_id) || undefined, answers, honeypot: $('f-website').value };
+  let r;
+  try {
+    r = await fetch('/hooks/appeal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) { btn.disabled = false; $('f-status').textContent = 'Network error — try again.'; return; }
+  const j = await r.json().catch(() => ({}));
+  if (r.ok && j.ok) {
+    $('context').textContent = '';
+    $('main').innerHTML = '<div class="good"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-weight:700">Appeal submitted</div><p class="dim">The mod team will review it. You\u2019ll hear back in the server or by DM.</p></div>';
+  } else {
+    btn.disabled = false;
+    $('f-status').textContent = 'Failed: ' + (j.error || ('HTTP ' + r.status));
+  }
+}
+init();
+</script>
+</body>
+</html>

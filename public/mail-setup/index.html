@@ -38,7 +38,7 @@ td{padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
 <div id="pck-nav"></div>
 <div class="wrap">
   <h1>Self-host the Mail inbox</h1>
-  <p class="lead">The tools run anywhere static. The <b>Mail inbox</b> (unified triage, tickets, ideas, roadmap, webhooks) needs one Cloudflare Worker + one D1 database per community. This guide takes you from zero to a live inbox in ~20 minutes. Free-tier friendly.</p>
+  <p class="lead">The tools run anywhere static. The <b>Mail inbox</b> (unified triage, tickets, ideas, roadmap, webhooks) needs one Cloudflare Worker + one D1 database per community. This guide takes you from zero to a live inbox in ~20 minutes. Free-tier friendly. On a production community deploy the inbox requires login — no demo data is ever shown there (the marketing site keeps a clearly-badged demo preview).</p>
   <div class="note">🤖 <b>Setting up with an AI assistant?</b> Give it a machine-readable version of these instructions: <a href="/ai-setup.md"><code>/ai-setup.md</code></a>. Prompt: <i>“Read /ai-setup.md and help me self-host the Mail inbox; ask me for every input first and keep secrets out of the chat.”</i></div>
 
   <div class="toc"><b>Steps</b>
@@ -136,12 +136,12 @@ curl https://&lt;your-worker&gt;.workers.dev/api/health   # expect {"ok":true,"e
        "content":"(max 4000 chars, truncated server-side)","author":"user1"}'</pre>
   <p>Unknown adapter names → 404. To add a forum permanently, extend <code>FORUM_ADAPTERS</code> in <code>src/index.ts</code> — no other changes needed.</p>
 
-  <h2 id="ideas"><span class="n">★</span>“Save as Idea” — message context menu</h2>
-  <p>Right-click any message → <b>Apps → Save as Idea</b> files it into the inbox as an <code>idea</code>. It's a Discord message command, handled at <code>POST /hooks/discord-interactions</code> (Ed25519-verified with <code>DISCORD_PUBLIC_KEY</code>).</p>
+  <h2 id="ideas"><span class="n">★</span>“Save as Idea” + slash commands</h2>
+  <p>Right-click any message → <b>Apps → Save as Idea</b> files it into the inbox as an <code>idea</code>. It's a Discord message command, handled at <code>POST /hooks/discord-interactions</code> (Ed25519-verified with <code>DISCORD_PUBLIC_KEY</code>). The same endpoint serves <b>/ban</b>, <b>/timeout</b> and <b>/unban</b> slash commands (mod roles only — checked on every use).</p>
   <ol>
     <li>Set <code>DISCORD_PUBLIC_KEY</code> (App → General Information → Public Key).</li>
     <li>Developer Portal → App → <b>Interactions Endpoint URL</b> = <code>https://&lt;your-host&gt;/hooks/discord-interactions</code> → Save (Discord sends a PING; the Worker replies PONG).</li>
-    <li>Register the command: <code>POST /api/admin/register-commands</code> (auth with your mod session or <code>X-Mod-Key</code>). It creates a guild command for instant availability.</li>
+    <li>Register the commands (while logged in as a mod, browser console on your host): <code>fetch('/api/admin/register-commands',{method:'POST'}).then(r=>r.json()).then(console.log)</code>. It (re)creates the guild command set instantly: Save as Idea + /ban + /timeout + /unban.</li>
   </ol>
   <p>Who can submit: any member holding a role in <code>DISCORD_IDEA_ROLE_IDS</code> (defaults to <code>DISCORD_MOD_ROLE_IDS</code>); others get a “no permission” reply. The app must be authorized with the <code>applications.commands</code> scope in the guild (re-invite with <code>scope=bot applications.commands</code> if the command doesn't appear).</p>
 
@@ -209,11 +209,13 @@ client.login(process.env.DISCORD_BOT_TOKEN);</pre>
     <li>Verify: open <code>/modtools/</code> — your slugs should appear in the server picker. Or <code>GET /api/modtools/servers</code> with your mod login or <code>X-Mod-Key</code>. Empty list = the var didn't deploy; re-check the escaping and redeploy.</li>
   </ol>
   <div class="note">Start testing with a throwaway: timeout a test account for 1 minute in one server, confirm it shows under Command → Timeouts, then remove it.</div>
+  <p><b>Record threads (optional):</b> add <code>"records_forum": "&lt;forum-channel-id&gt;"</code> next to <code>guild</code> in a <code>MOD_TOOL_SERVERS</code> entry to link every user to a thread in a staff-only forum channel (must not require tags; bot needs View Channel + Send Messages + Read Message History + Manage Threads there). The first Command action creates the thread; every later action posts into it automatically. Search any user in Command → Records to see their thread links plus full history.</p>
   <ul>
     <li><b>Different usernames OK:</b> link Discord ↔ forum in <code>/modtools/</code> Ban pane (Discord ID + forum user ID + username), or auto-link via Discourse webhook <code>custom_fields.discord_id</code>. Bans resolve the forum ID via the link — unlinked Discourse targets report <code>no linked discourse account</code> instead of suspending the wrong user.</li>
     <li><b>Temp bans auto-expire:</b> <code>duration_minutes</code> sets <code>expires_at</code>; the cron unbans everywhere (Discord + Discourse) and deactivates. Appeal approve does the same full unban.</li>
-    <li><b>Limits are D1-backed:</b> bans 5/min, timeouts 10/min, notes/links 20/min per mod; appeals 1 per ban/24h + 5/hr per IP. Timeline (<code>GET /api/infractions/:user/timeline</code>) merges bans, timeouts, infractions, appeals <b>and notes</b>.</li>
-    <li><b>Cold archive:</b> 90d retention cron archives to GitHub (truth) + Discord webhook (mirror) before delete. Manual: <code>POST /api/admin/archive-now</code>.</li>
+    <li><b>Limits are D1-backed:</b> bans 5/min, timeouts 10/min, notes/links 20/min per mod; appeals: one per user ever, plus the per-ban wait below. Timeline (<code>GET /api/infractions/:user/timeline</code>) merges bans, timeouts, infractions, appeals <b>and notes</b>.</li>
+    <li><b>Appeal waits + links:</b> set an appeal delay per ban (Ban form → "Appeal wait days", stored as <code>appeal_wait_days</code>, 0 = immediate). Mint expiring single-use invite links from any active ban (Bans → Invite) and DM them, or send users to <code>/appeals/</code> which also finds bans by user ID — no link needed.</li>
+    <li><b>Cold archive:</b> 90d retention cron archives to GitHub (truth) + Discord webhook (mirror) + staff-only Discourse subcategory (browsable paper trail, one topic per item) before delete. Test the forum path with <code>POST /api/admin/archive-test</code>. Manual: <code>POST /api/admin/archive-now</code>.</li>
   </ul>
 
   <h2 id="servers"><span class="n">★</span>How mail works across multiple servers</h2>

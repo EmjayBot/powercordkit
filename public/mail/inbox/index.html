@@ -77,12 +77,39 @@ let data = [], sel = null, fS = 'all', fT = 'all', fStatus = 'open', serversCach
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+// Display time: real dates from created_at ("5m ago", "3h ago", "Mar 4").
+// Falls back to the stored time string (old poller items) or '—'.
+function fmtWhen(d) {
+  const t = Date.parse(d.created_at || '');
+  if (!isNaN(t)) {
+    const s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) { const m = Math.floor(s / 60); return m + 'm ago'; }
+    if (s < 86400) { const h = Math.floor(s / 3600); return h + 'h ago'; }
+    if (s < 86400 * 30) { const dd = Math.floor(s / 86400); return dd + 'd ago'; }
+    return new Date(t).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+  return d.time || '—';
+}
+
+// List preview: never show raw JSON blobs. Appeal answers show the apology;
+// other structured content shows a subtle placeholder (open the item to view).
+function previewFor(d) {
+  const raw = d.content || '';
+  let o = null;
+  try { o = JSON.parse(raw); } catch { return esc(raw.slice(0, 75)) + '...'; }
+  if (!o || typeof o !== 'object') return esc(raw.slice(0, 75)) + '...';
+  if (typeof o.apology === 'string' && o.apology) return esc(o.apology.slice(0, 90)) + (o.apology.length > 90 ? '...' : '');
+  if (o.tool) return '🔧 ' + esc(String(o.tool).replace(/-/g, ' ')) + ' — open to view';
+  return '📎 structured content — open to view';
+}
+
 // Render tool exports (JSON with a `tool` field, mailed from the labs)
 // as structured cards instead of raw text. Falls back to markdown.
 function toolCard(raw) {
   let o = null;
   try { o = JSON.parse(raw); } catch { return md(raw); }
-  if (!o || typeof o !== 'object' || !o.tool) return md(raw);
+  if (!o || typeof o !== 'object') return md(raw);
   const chip = (t) => '<span class="badge">' + esc(t) + '</span>';
   const row = (k, v) => '<div style="display:flex;gap:8px;font-size:12px;padding:5px 0;border-bottom:1px solid #26262b"><span style="color:var(--m);min-width:110px">' + esc(k) + '</span><span>' + v + '</span></div>';
   const list = (items) => (items || []).map((x) => chip(x)).join(' ') || '<span style="color:var(--m)">—</span>';
@@ -123,6 +150,14 @@ function toolCard(raw) {
       (e.description ? '<div style="font-size:12.5px;color:#dbdee1;white-space:pre-wrap;margin-top:4px">' + esc(e.description) + '</div>' : '') +
       ((e.fields || []).map((f) => '<div style="font-size:12px;margin-top:6px"><b>' + esc(f.name) + '</b><br><span style="color:#dbdee1">' + esc(f.value) + '</span></div>').join('')) +
       '</div><div style="margin-top:8px;font-size:11px;color:var(--m)">Apply: copy the JSON (Copy JSON button in the tool) into your bot or a webhook payload.</div>';
+  }
+  // Any other JSON (appeal answers, mailed plans, apply results): key/value
+  // rows only — raw JSON stays hidden (open in Command for the full record).
+  if (o && typeof o === 'object') {
+    const prettyKey = (k) => String(k).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    const val = (v) => esc(typeof v === 'string' ? v : JSON.stringify(v, null, 2));
+    const rows = Object.entries(o).map(([k, v]) => row(prettyKey(k), val(v))).join('') || '<div style="font-size:12px;color:var(--m)">Empty object.</div>';
+    return '<div style="margin-top:8px">' + rows + '</div>';
   }
   return md(raw);
 }
@@ -185,13 +220,12 @@ function renderFilters(servers, types) {
     if (fS !== 'all' && !shown.some((s) => s.server === fS)) fS = 'all';
     const total = serversCache.reduce((a, s) => a + s.count, 0);
     box.innerHTML = '<div class="srv' + (fS === 'all' ? ' active' : '') + '" data-server="all"><span>All Servers</span><span id="c-all">' + total + '</span></div>' +
-      shown.map((s) => '<div class="srv' + (fS === s.server ? ' active' : '') + '" data-server="' + esc(s.server) + '"><span>' + esc(s.server) + (s.locked ? ' 🔒' : '') + '</span><span>' + s.count + '</span></div>').join('');
+      shown.map((s) => '<div class="srv' + (fS === s.server ? ' active' : '') + '" data-server="' + esc(s.server) + '"><span>' + esc(s.name || s.server) + (s.locked ? ' 🔒' : '') + '</span><span>' + s.count + '</span></div>').join('');
     const selEl = $('m-server');
     if (selEl) {
       const cur = selEl.value;
-      const names = serversCache.map((s) => s.server);
-      selEl.innerHTML = names.map((n) => '<option' + (n === cur ? ' selected' : '') + '>' + esc(n) + '</option>').join('');
-      if (!names.includes(cur) && cur) selEl.innerHTML += '<option selected>' + esc(cur) + '</option>';
+      selEl.innerHTML = serversCache.map((s) => '<option value="' + esc(s.server) + '"' + (s.server === cur ? ' selected' : '') + '>' + esc(s.name || s.server) + '</option>').join('');
+      if (!serversCache.some((s) => s.server === cur) && cur) selEl.innerHTML += '<option selected>' + esc(cur) + '</option>';
     }
   }
   const tbox = $('type-filters');
@@ -201,6 +235,15 @@ function renderFilters(servers, types) {
     const total = list.reduce((a, t) => a + t.count, 0);
     tbox.innerHTML = '<div class="srv' + (fT === 'all' ? ' active' : '') + '" data-type="all"><span>All types</span><span>' + total + '</span></div>' +
       list.map((t) => '<div class="srv' + (fT === t.type ? ' active' : '') + '" data-type="' + esc(t.type) + '"><span>' + esc(t.type) + '</span><span>' + t.count + '</span></div>').join('');
+  }
+}
+
+async function isCommunityHost() {
+  try {
+    const h = await fetch('/api/health', { cache: 'no-store' }).then((x) => x.json());
+    return !!(h && h.env === 'community');
+  } catch {
+    return false;
   }
 }
 
@@ -222,8 +265,9 @@ async function load() {
     const h = await fetch('/api/health', { cache: 'no-store' }).then(x=>x.json()).catch(()=>null);
     if (h) { if (window.PCK) window.PCK.right('<span class="pill">' + (h.env || 'personal') + '</span>'); const host = h.communityDomain || h.personalDomain || location.host; $('api-env').textContent = host + ' (Workers + D1)'; $('hook-hint').innerHTML = 'Discourse webhook:<br/>POST https://' + host + '/hooks/discourse'; }
   } catch (e) {
-    // Logged-out visitors get a clearly-badged demo instead of a locked screen.
-    if (window.PCKDemo) {
+    // Production community inbox: login required, never demo data.
+    // (Marketing/personal deploys keep the clearly-badged demo preview.)
+    if (window.PCKDemo && !(await isCommunityHost())) {
       PCKDemo.enter();
       data = window.PCKDemo.items.slice();
       $('status').innerHTML = window.PCKDemo.banner() + ' — ' + data.length + ' sample items';
@@ -260,9 +304,9 @@ function render() {
     el.className = 'item' + (sel && sel.id === d.id ? ' sel' : '');
     const tAg = (d.tag && d.tag.toLowerCase() !== (d.type || '').toLowerCase()) ? '<span class="badge">' + esc(d.tag) + '</span>' : '';
     el.innerHTML = '<div class="av">' + esc((d.author || '?')[0].toUpperCase()) + '</div><div style="flex:1;min-width:0">' +
-      '<div class="meta"><span class="badge">' + esc(d.type || d.src) + '</span>' + tAg + (d.assigned ? '<span class="badge">👤 ' + esc(d.assigned) + '</span>' : '') + '<span style="margin-left:auto">' + esc(d.time || '') + '</span></div>' +
+      '<div class="meta"><span class="badge">' + esc(d.type || d.src) + '</span>' + tAg + (d.assigned ? '<span class="badge">👤 ' + esc(d.assigned) + '</span>' : '') + '<span style="margin-left:auto">' + esc(fmtWhen(d)) + '</span></div>' +
       '<div class="title">' + esc(d.title) + '</div>' +
-      '<div class="prev">' + esc((d.content || '').slice(0, 75)) + '...</div>' +
+      '<div class="prev">' + previewFor(d) + '</div>' +
       '<div class="orig2">' + esc(d.author || 'unknown') + ' • ' + esc(d.server) + ' • ' + esc(d.src) + '</div>' +
       '</div>';
     el.onclick = () => select(d.id);
@@ -277,9 +321,17 @@ function select(id) {
   const det = $('detail');
   det.classList.add('open');
   const isTag = sel.tag && sel.tag.toLowerCase() !== (sel.type || '').toLowerCase();
+  // Moderation UI only where it acts: tickets/support/mailed get the Moderate
+  // row; appeals get ONLY Approve/Deny (no Warn/Ban/Timeout row). Ideas and
+  // roadmap-flagged items show neither — planning surfaces, not targets.
+  const showMod = sel.type !== 'idea' && sel.type !== 'appeal' && !sel.roadmap;
+  // Roadmap section only where it acts: forum-submitted or bot-captured ideas,
+  // all support items, or items already on the roadmap (so they can still be
+  // updated/removed). Manual one-off ideas stay out.
+  const showRoadmap = (sel.type === 'idea' && (sel.server === 'discourse' || sel.src === 'discord')) || sel.type === 'support' || !!sel.roadmap;
   det.innerHTML =
     '<div style="padding:14px;border-bottom:1px solid #26262b;display:flex;justify-content:space-between;align-items:flex-start">' +
-      '<div style="display:flex;align-items:flex-start;gap:8px"><button class="abtn mob-only" id="back-btn" style="margin-top:2px;flex:0 0 auto">←</button><div><div><span class="badge">' + esc(sel.type || sel.src) + '</span>' + (isTag ? ' <span class="badge">' + esc(sel.tag) + '</span>' : '') + (sel.assigned ? ' <span class="badge">👤 ' + esc(sel.assigned) + '</span>' : '') + '</div><div style="font-size:11px;color:var(--m);margin-top:6px">' + esc(sel.time || '') + '</div></div></div>' +
+      '<div style="display:flex;align-items:flex-start;gap:8px"><button class="abtn mob-only" id="back-btn" style="margin-top:2px;flex:0 0 auto">←</button><div><div><span class="badge">' + esc(sel.type || sel.src) + '</span>' + (isTag ? ' <span class="badge">' + esc(sel.tag) + '</span>' : '') + (sel.assigned ? ' <span class="badge">👤 ' + esc(sel.assigned) + '</span>' : '') + '</div><div style="font-size:11px;color:var(--m);margin-top:6px">' + esc(fmtWhen(sel)) + '</div></div></div>' +
       '<div>' + (sel.archived ? '<button class="abtn prim" id="arch-btn">Reopen</button>' : '<button class="abtn prim" id="arch-btn">Complete (E)</button>') + ' <button class="abtn" id="jump-btn">Jump ↗</button></div>' +
     '</div>' +
     '<div class="content">' +
@@ -287,22 +339,26 @@ function select(id) {
       '<div class="box">' + toolCard(sel.content) + '</div>' +
       '<div id="notes">' + (sel.notes || []).map((n) => '<div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #26262b"><div class="av" style="width:22px;height:22px">' + esc((n.by || '?')[0]) + '</div><div><b style="font-size:12px">' + esc(n.by) + '</b><div style="font-size:13px">' + esc(n.text) + '</div></div></div>').join('') + '</div>' +
       '<div style="display:flex;gap:8px;margin-top:10px"><input class="search" id="note-inp" placeholder="Add private note…" /><button class="abtn prim" id="note-btn">Add</button></div>' +
-      '<div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px">' +
-        '<span style="color:var(--m)">Moderate</span>' +
-        '<input class="search" id="mt-user" placeholder="Discord user ID" style="width:170px" />' +
-        '<button class="abtn prim" id="mt-warn">Warn</button>' +
-        '<button class="abtn" id="mt-ban">Ban</button>' +
-        '<button class="abtn" id="mt-to">Timeout</button>' +
-        '<button class="abtn" id="mt-notes-btn">Notes</button>' +
-        '<a class="abtn" href="/modtools/" target="_blank" rel="noopener" style="text-decoration:none">Mod Tools ↗</a>' +
-      '</div>' +
-      '<div id="mt-notes" style="font-size:12px;color:var(--m);margin-top:8px"></div>' +
+      (showMod
+        ? '<div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px">' +
+          '<span style="color:var(--m)">Moderate</span>' +
+          '<input class="search" id="mt-user" placeholder="Discord user ID" style="width:170px" />' +
+          '<select id="mt-server" class="abtn" style="padding:4px 8px;max-width:170px"><option value="">server…</option></select>' +
+          '<button class="abtn prim" id="mt-warn">Warn</button>' +
+          '<button class="abtn" id="mt-ban">Ban</button>' +
+          '<button class="abtn" id="mt-to">Timeout</button>' +
+          '<button class="abtn" id="mt-notes-btn">Notes</button>' +
+          '<button class="abtn" id="mt-open">Command ↗</button>' +
+        '</div>' +
+        '<div id="mt-notes" style="font-size:12px;color:var(--m);margin-top:8px"></div>'
+        : '') +
       '<div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px">' +
         '<span style="color:var(--m)">Roadmap</span>' +
         '<select id="rm-status" class="abtn" style="padding:4px 8px">' +
           [['planned','Planned'],['in-progress','In Progress'],['shipped','Shipped']].map(function (o) { return '<option value="' + o[0] + '"' + (((sel.roadmap_status || 'planned') === o[0]) ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select>' +
         '<input id="rm-date" type="date" class="abtn" value="' + esc(sel.roadmap_date || '') + '" style="padding:3px 6px" />' +
+        '<label style="font-size:11px;color:var(--m);display:flex;gap:4px;align-items:center;cursor:pointer"><input type="checkbox" id="rm-public"' + (sel.roadmap_public ? ' checked' : '') + ' /> Public</label>' +
         '<button class="abtn prim" id="rm-save">' + (sel.roadmap ? 'Update' : 'Add to roadmap') + '</button>' +
         (sel.roadmap ? '<button class="abtn" id="rm-remove">Remove</button>' : '') +
       '</div>' +
@@ -335,7 +391,24 @@ function select(id) {
   if (rmv) rmv.onclick = () => roadmapRemove(sel.id);
   const back = $('back-btn');
   if (back) back.onclick = () => { sel = null; $('detail').classList.remove('open'); render(); };
+  if (!showMod) { /* ideas/appeals/roadmap: no Warn/Ban/Timeout row (appeals handled below) */ } else {
   const mtUser = () => ($('mt-user').value || '').trim();
+  const mtServer = () => ($('mt-server') ? $('mt-server').value : '');
+  let mtServersCache = null;
+  async function loadMtServers(prefer) {
+    try {
+      if (!mtServersCache) {
+        const r = await api('/api/modtools/servers');
+        const j = await r.json();
+        mtServersCache = { list: (j.servers || []).filter((s) => s !== 'discourse'), names: j.names || {} };
+      }
+      const { list, names } = mtServersCache;
+      if ($('mt-server')) $('mt-server').innerHTML = list.length
+        ? list.map((s) => '<option value="' + esc(s) + '"' + (s === prefer ? ' selected' : '') + '>' + esc(names[s] || s) + '</option>').join('')
+        : '<option value="">(no servers)</option>';
+      if ($('mt-server') && prefer && list.includes(prefer)) $('mt-server').value = prefer;
+    } catch { /* selects stay manual */ }
+  }
   async function loadUserNotes(u) {
     if (!/^\d{10,}$/.test(u || '')) return;
     const r = await api('/api/user-notes?user_id=' + encodeURIComponent(u));
@@ -353,17 +426,77 @@ function select(id) {
     $('mt-notes').textContent = j.ok ? '✅ Warning recorded' : (j.error || 'Failed');
     loadUserNotes(u);
   };
-  const goModTools = (u) => { if (!/^\d{10,}$/.test(u || '')) return alert('Enter a valid Discord user ID'); location.href = '/modtools/?user=' + encodeURIComponent(u); };
-  $('mt-ban').onclick = () => goModTools(mtUser());
-  $('mt-to').onclick = () => goModTools(mtUser());
+  const goModTools = (u) => { if (!/^\d{10,}$/.test(u || '')) return alert('Enter a valid Discord user ID'); window.open('/modtools/?user=' + encodeURIComponent(u), '_blank', 'noopener'); };
+  $('mt-ban').onclick = async () => {
+    if (window.PCKDemo && PCKDemo.blocked()) return;
+    const u = mtUser();
+    if (!/^\d{10,}$/.test(u)) return alert('Enter a valid Discord user ID');
+    const srv = mtServer();
+    if (!srv) return alert('Pick a server first');
+    if (!confirm('Ban ' + u + ' on ' + srv + '?\nReason: ' + (sel.title || ''))) return;
+    const r = await api('/api/bans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: u, reason: (sel.title || '').slice(0, 1000), servers: [srv] }) });
+    const j = await r.json().catch(() => ({}));
+    $('mt-notes').textContent = j.ok
+      ? '✅ Banned on ' + srv + (j.dm && j.dm.sent ? ' · appeal link DM’d' : (j.dm && j.dm.error ? ' · DM failed: ' + j.dm.error : ''))
+      : ('Failed: ' + (j.error || r.status));
+    loadUserNotes(u);
+  };
+  $('mt-to').onclick = async () => {
+    if (window.PCKDemo && PCKDemo.blocked()) return;
+    const u = mtUser();
+    if (!/^\d{10,}$/.test(u)) return alert('Enter a valid Discord user ID');
+    const srv = mtServer();
+    if (!srv) return alert('Pick a server first');
+    const minsRaw = prompt('Timeout minutes?', '60');
+    if (minsRaw === null) return;
+    const mins = Math.min(Math.max(Number(minsRaw) || 60, 1), 40320);
+    const r = await api('/api/timeouts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: u, server: srv, duration_minutes: mins, reason: (sel.title || '').slice(0, 400) }) });
+    const j = await r.json().catch(() => ({}));
+    $('mt-notes').textContent = j.ok ? ('✅ Timed out on ' + srv + ' for ' + mins + ' min') : ('Failed: ' + (j.error || r.status));
+    loadUserNotes(u);
+  };
+  $('mt-open').onclick = () => goModTools(mtUser());
   $('mt-notes-btn').onclick = () => loadUserNotes(mtUser());
+  loadMtServers(sel.server);
+  } // end moderate row (ideas/appeals/roadmap skip it)
+  // Appeal items: approve / deny inline (approve triggers the full unban).
+  // Stands alone — appeals never show the Warn/Ban/Timeout row.
+  if (sel.type === 'appeal') {
+    const abox = document.createElement('div');
+    abox.id = 'appeal-box';
+    abox.style.cssText = 'margin-top:10px;font-size:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+    abox.innerHTML = '<span style="color:var(--m)">Appeal</span><span id="ap-status">looking up…</span>';
+    $('notes').after(abox);
+    (async () => {
+      try {
+        const r = await api('/api/appeals?status=open');
+        const j = await r.json();
+        const m = (j.items || []).find((a) => String(a.user_id) === String(sel.author));
+        const st = $('ap-status');
+        if (!m) { if (st) st.textContent = 'no open appeal matches this item (already decided?)'; return; }
+        abox.innerHTML = '<span style="color:var(--m)">Appeal</span><button class="abtn prim" id="ap-ok">Approve + unban</button><button class="abtn" id="ap-no">Deny</button><span id="ap-msg" style="color:var(--m)"></span>';
+        const done = async (v) => {
+          const msg = $('ap-msg');
+          if (msg) msg.textContent = 'working…';
+          const rr = await api('/api/appeals/' + m.id + '/' + v, { method: 'POST' });
+          const jj = await rr.json().catch(() => ({}));
+          if (!jj.ok) { if (msg) msg.textContent = 'Failed: ' + (jj.error || rr.status); return; }
+          // Decided = resolved: auto-complete the inbox item like pressing E.
+          await complete(sel.id);
+        };
+        $('ap-ok').onclick = () => done('approve');
+        $('ap-no').onclick = () => done('deny');
+      } catch { const st = $('ap-status'); if (st) st.textContent = 'lookup failed'; }
+    })();
+  }
 }
 
 async function roadmapSave(id) {
   if (window.PCKDemo && PCKDemo.blocked()) return;
   const status = $('rm-status').value;
   const date = $('rm-date').value;
-  try { await api('/api/inbox/' + encodeURIComponent(id) + '/roadmap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, date }) }); } catch {}
+  const pub = $('rm-public') ? $('rm-public').checked : false;
+  try { await api('/api/inbox/' + encodeURIComponent(id) + '/roadmap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, date, public: pub }) }); } catch {}
   await load();
   select(id);
 }

@@ -78,7 +78,8 @@ async function loadServers() {
     if (!r.ok) return;
     const j = await r.json();
     const list = (Array.isArray(j.servers) ? j.servers : []).filter((s) => s !== 'discourse');
-    if (list.length) $('server').innerHTML = list.map((s) => '<option>' + s.replace(/</g,'&lt;') + '</option>').join('');
+    const names = (j.names && typeof j.names === 'object') ? j.names : {};
+    if (list.length) $('server').innerHTML = list.map((s) => '<option value="' + String(s).replace(/"/g,'&quot;') + '">' + String(names[s] || s).replace(/</g,'&lt;') + '</option>').join('');
   } catch { /* public page stays usable without the list */ }
 }
 loadServers();

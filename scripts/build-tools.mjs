@@ -77,11 +77,13 @@ if (!base.endsWith('/')) base += '/';
 
 // Backend-dependent pages excluded from the tools-only site.
 // Respects the same feature flags as the nav above.
+// `appeals` always ships off-site: the form needs same-origin /hooks + /api.
 const PRUNE = [];
 if (!showInbox) PRUNE.push('mail', 'tickets');
 if (!showIdeas) PRUNE.push('ideas');
 if (!showRoadmap) PRUNE.push('roadmap');
 if (!showModtools) PRUNE.push('modtools');
+PRUNE.push('appeals');
 for (const lab of labsOff) PRUNE.push(lab);
 
 rmSync(out, { recursive: true, force: true });

@@ -48,6 +48,14 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+async function isCommunityHost() {
+  try {
+    const h = await fetch('/api/health', { cache: 'no-store' }).then((x) => x.json());
+    return !!(h && h.env === 'community');
+  } catch {
+    return false;
+  }
+}
 // Mod-key gate: when the Worker sets MOD_API_KEY, /api/* needs X-Mod-Key.
 // Prompt once per session, keep it out of URLs/storage.
 async function api(path, opts) {
@@ -81,7 +89,9 @@ async function load(){
     items = j.items || [];
     $('status').textContent = items.length + ' ideas in queue • backed by Mail API';
   } catch {
-    if (window.PCKDemo) {
+    // Production community site: login required, never demo data.
+    // (Marketing/personal deploys keep the clearly-badged demo preview.)
+    if (window.PCKDemo && !(await isCommunityHost())) {
       PCKDemo.enter();
       const q = $('q').value.trim().toLowerCase();
       const all = PCKDemo.items.filter((d) => d.type === 'idea');

@@ -10,6 +10,8 @@ type Env = {
   DISCOURSE_BASE_URL?: string;
   DISCOURSE_ADMIN_KEY?: string;
   SESSION_SECRET?: string;
+  COMMUNITY_DOMAIN?: string;
+  PERSONAL_DOMAIN?: string;
 };
 
 const mod = new Hono<{ Bindings: Env }>();
@@ -29,7 +31,7 @@ async function readJson<T>(c: any): Promise<T> {
   }
 }
 
-type ToolServers = Record<string, { guild?: string }>;
+type ToolServers = Record<string, { guild?: string; records_forum?: string; records_tag?: string; name?: string }>;
 function toolServers(env: Env): ToolServers {
   try {
     const v = JSON.parse(env.MOD_TOOL_SERVERS ?? '{}');
@@ -81,10 +83,18 @@ async function resolveForumId(db: D1Database, discordId: string, platform: strin
 }
 
 // Advertise the configured server slugs so the UI is never hardcoded to one community.
+// `servers` stays a plain slug array (planner pages depend on it); `names` carries
+// optional display labels ("slug" -> "The East Pacific") for dropdowns and filters.
 mod.get('/api/modtools/servers', (c) => {
-  const servers = Object.keys(toolServers(c.env));
-  if (c.env.DISCOURSE_BASE_URL && c.env.DISCOURSE_ADMIN_KEY && !servers.includes('discourse')) servers.push('discourse');
-  return c.json({ ok: true, servers });
+  const map = toolServers(c.env);
+  const servers = Object.keys(map);
+  const names: Record<string, string> = {};
+  for (const slug of servers) if (map[slug]?.name) names[slug] = map[slug].name as string;
+  if (c.env.DISCOURSE_BASE_URL && c.env.DISCOURSE_ADMIN_KEY && !servers.includes('discourse')) {
+    servers.push('discourse');
+    names['discourse'] = 'Discourse';
+  }
+  return c.json({ ok: true, servers, names });
 });
 
 function fixedWindowKey(key: string): string {
@@ -93,7 +103,7 @@ function fixedWindowKey(key: string): string {
 
 // D1-backed fixed-window rate limit. Works across Workers isolates
 // (the old in-memory Map did not). Returns true when allowed.
-async function checkRateLimit(db: D1Database, key: string, max: number, windowMs: number): Promise<boolean> {
+export async function checkRateLimit(db: D1Database, key: string, max: number, windowMs: number): Promise<boolean> {
   const now = Date.now();
   try {
     const row = await db
@@ -140,6 +150,190 @@ async function discordReq(token: string, method: string, path: string, body?: un
     body: body ? JSON.stringify(body) : undefined,
   });
   return { ok: r.ok, status: r.status };
+}
+
+// ------------------------------------------------------------------ Record threads
+// Per-user mod record: each (user, server slug) links to one thread in a
+// staff-only Discord forum channel (per slug via `records_forum` in
+// MOD_TOOL_SERVERS). The first Command action creates the thread; every later
+// action posts into the same thread, so the forum post mirrors the D1 history.
+// Best-effort throughout: a record failure never fails the mod action itself.
+function recordUrl(guildId: string, threadId: string): string {
+  return `https://discord.com/channels/${guildId}/${threadId}`;
+}
+
+// First slug with a records forum configured (fallback for server-less actions).
+function recordSlug(env: Env, preferred?: string | null): string | null {
+  const map = toolServers(env);
+  if (preferred && map[preferred]?.records_forum) return preferred;
+  return Object.keys(map).find((s) => map[s]?.records_forum) ?? null;
+}
+
+async function discordUsername(token: string, userId: string): Promise<string | null> {
+  try {
+    const r = await fetch(`https://discord.com/api/v10/users/${userId}`, {
+      headers: { Authorization: 'Bot ' + token },
+    });
+    if (!r.ok) return null;
+    const j: any = await r.json();
+    const name = j?.global_name || j?.username;
+    return typeof name === 'string' && name ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+// Find the record thread for (user, slug), creating it on first use.
+async function ensureRecordThread(
+  db: D1Database,
+  env: Env,
+  slug: string,
+  userId: string,
+): Promise<{ thread_id: string; guild: string; created: boolean } | { error: string }> {
+  const cfg = toolServers(env)[slug];
+  if (!cfg?.guild) return { error: 'unknown server slug' };
+  if (!cfg.records_forum) return { error: `no records forum configured for ${slug}` };
+  const token = env.DISCORD_BOT_TOKEN;
+  if (!token) return { error: 'bot token not configured' };
+  try {
+    const existing = await db
+      .prepare('SELECT thread_id FROM user_records WHERE user_id = ? AND slug = ?')
+      .bind(userId, slug)
+      .first<{ thread_id: string }>();
+    if (existing?.thread_id) return { thread_id: existing.thread_id, guild: cfg.guild, created: false };
+  } catch {
+    return { error: 'records table not migrated (need 0010_user_records)' };
+  }
+  // Forum threads are created with an initial message. If the forum requires
+  // tags, set `records_tag` (a tag ID from that forum) on the slug — it is
+  // applied to every record thread. 1440 = auto-archive after 24h idle; any
+  // new action post un-archives it.
+  const uname = await discordUsername(token, userId);
+  const name = `${uname ?? 'user'} (${userId})`.slice(0, 100);
+  const intro = recordEmbed({
+    title: '📋 Mod record opened',
+    color: 0x5865f2,
+    userId,
+    reason: `Tracking history for ${uname ? `${uname} (${userId})` : userId}. Every Command action on this user is posted here as a card.`,
+  });
+  const discordErr = (r: { status: number; data?: any }) => {
+    const d = r.data ?? {};
+    const detail = typeof d === 'object' ? (d.message ?? JSON.stringify(d).slice(0, 300)) : String(d);
+    return `${r.status}: ${detail}`;
+  };
+  const tagIds = cfg.records_tag ? [cfg.records_tag] : [];
+  const makeThread = (archiveMins: number) =>
+    discordJson(token, 'POST', `/channels/${cfg.records_forum}/threads`, {
+      name,
+      auto_archive_duration: archiveMins,
+      ...(tagIds.length ? { applied_tags: tagIds } : {}),
+      message: { embeds: [intro] },
+    });
+  let r = await makeThread(1440);
+  if (!r.ok && r.status === 400) {
+    // 1440 needs no boost on most guilds, but fall back to 60 (universal) once.
+    r = await makeThread(60);
+  }
+  if (!r.ok && /tag/i.test(JSON.stringify(r.data ?? {})) && !tagIds.length) {
+    // Forum requires a tag and none is configured: list what's available so the
+    // mod knows which tag ID to put in records_tag.
+    const ch = await discordJson(token, 'GET', `/channels/${cfg.records_forum}`);
+    const tags = (ch.data as any)?.available_tags;
+    const listing = Array.isArray(tags) && tags.length
+      ? tags.map((t: any) => `${t?.name ?? '?'} (${t?.id ?? '?'})`).join(', ')
+      : 'none visible';
+    return { error: `forum requires a tag — add "records_tag": "<tag-id>" to slug ${slug} in MOD_TOOL_SERVERS. Available tags: ${listing}` };
+  }
+  if (!r.ok || !r.data?.id) return { error: `thread create failed (${discordErr(r)})` };
+  const threadId = String(r.data.id);
+  await db
+    .prepare(
+      'INSERT INTO user_records (user_id, slug, thread_id, forum_id, guild_id, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, slug) DO UPDATE SET thread_id = excluded.thread_id',
+    )
+    .bind(userId, slug, threadId, cfg.records_forum, cfg.guild, new Date().toISOString())
+    .run();
+  return { thread_id: threadId, guild: cfg.guild, created: true };
+}
+
+// Inbox deep-link for an evidence mail item.
+function inboxUrl(env: Env, mailId: string): string {
+  const host = env.COMMUNITY_DOMAIN || env.PERSONAL_DOMAIN || 'mod.tep.one';
+  return `https://${host}/mail/inbox/?q=${encodeURIComponent(mailId)}`;
+}
+
+// Absolute URL for a file under /assets (Discord embeds need absolute URLs).
+function assetUrl(env: Env, file: string): string {
+  const host = env.COMMUNITY_DOMAIN || env.PERSONAL_DOMAIN || 'mod.tep.one';
+  return `https://${host}/assets/${file}`;
+}
+
+async function sha256hex(s: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function mention(id: string): string {
+  return /^\d{10,}$/.test(id) ? `<@${id}>` : `\`${id}\``;
+}
+
+// Rich record-thread card: clickable user/mod mentions, reason, server, expiry,
+// evidence link. Colors follow Discord semantics (red = ban, green = resolved).
+function recordEmbed(opts: {
+  title: string;
+  color: number;
+  userId: string;
+  mod?: string;
+  server?: string;
+  reason?: string;
+  expires?: string | null;
+  evidenceUrl?: string;
+}): Record<string, unknown> {
+  const fields: Record<string, unknown>[] = [
+    { name: 'User', value: `${mention(opts.userId)} (\`${opts.userId}\`)`, inline: true },
+  ];
+  if (opts.mod) fields.push({ name: 'Moderator', value: mention(opts.mod), inline: true });
+  if (opts.server) fields.push({ name: 'Server', value: opts.server, inline: true });
+  if (opts.expires !== undefined) fields.push({ name: 'Expires', value: opts.expires ?? 'Permanent', inline: true });
+  if (opts.evidenceUrl) fields.push({ name: 'Evidence', value: `[Open in inbox](${opts.evidenceUrl})` });
+  return {
+    title: opts.title.slice(0, 256),
+    description: (opts.reason ?? '').slice(0, 4000) || undefined,
+    color: opts.color,
+    fields,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// Post one action line to the user's record thread (un-archiving first if needed).
+async function postRecord(
+  db: D1Database,
+  env: Env,
+  slug: string,
+  userId: string,
+  embed: Record<string, unknown>,
+): Promise<{ thread_id?: string; error?: string }> {
+  const ensured = await ensureRecordThread(db, env, slug, userId);
+  if (!('thread_id' in ensured)) return { error: ensured.error };
+  const token = env.DISCORD_BOT_TOKEN;
+  if (!token) return { error: 'bot token not configured' };
+  // Mentions inside embeds render clickable but never ping — safe in staff channels.
+  const body = { embeds: [embed] };
+  let r = await discordJson(token, 'POST', `/channels/${ensured.thread_id}/messages`, body);
+  if (!r.ok) {
+    // Thread probably archived: unarchive (needs Manage Threads) and retry once.
+    await discordJson(token, 'PATCH', `/channels/${ensured.thread_id}`, { archived: false });
+    r = await discordJson(token, 'POST', `/channels/${ensured.thread_id}/messages`, body);
+  }
+  if (!r.ok) return { error: `post failed (${r.status}: ${typeof r.data === 'object' ? (r.data?.message ?? JSON.stringify(r.data).slice(0, 200)) : String(r.data ?? '')})` };
+  try {
+    await db
+      .prepare('UPDATE user_records SET last_post_at = ? WHERE user_id = ? AND slug = ?')
+      .bind(new Date().toISOString(), userId, slug)
+      .run();
+  } catch {
+    /* last_post_at best-effort */
+  }
+  return { thread_id: ensured.thread_id };
 }
 
 async function suspendDiscourse(
@@ -203,8 +397,11 @@ async function unbanEverywhere(
         results[slug] = { ok: false, error: 'unknown server slug' };
         continue;
       }
-      const r = await discordReq(token, 'DELETE', `/guilds/${g.guild}/bans/${ban.user_id}`);
-      results[slug] = { ok: r.ok, status: r.status };
+      const r = await discordJson(token, 'DELETE', `/guilds/${g.guild}/bans/${ban.user_id}`);
+      // 404 = already unbanned on Discord: treat as success so the row still clears.
+      results[slug] = r.ok || r.status === 404
+        ? { ok: true, status: r.status }
+        : { ok: false, status: r.status, error: discordMsg(r) };
     }
   } else {
     for (const slug of servers) {
@@ -235,8 +432,253 @@ export async function expireBans(db: D1Database, env: Env): Promise<number> {
     }
     await db.prepare('UPDATE bans SET is_active = 0 WHERE id = ?').bind(row.id).run();
     await audit(db, { action: 'ban_expire', user_id: row.user_id, detail: { ban: row.id } });
+    for (const slug of JSON.parse(row.servers_json || '[]')) {
+      if (slug === 'discourse') continue;
+      await postRecord(db, env, String(slug), row.user_id, recordEmbed({
+        title: '⏳ Temp ban expired',
+        color: 0x808080,
+        userId: row.user_id,
+        server: String(slug),
+      }));
+    }
   }
   return list.length;
+}
+
+// ------------------------------------------------------------------ Shared cores
+// The same ban/timeout/unban flow serves the REST API and Discord slash
+// commands — one implementation, two callers. Callers validate + rate-limit;
+// cores execute (Discord + D1 + audit + record threads + appeal DM).
+
+export type BanInput = {
+  uid: string; reason: string; servers: string[];
+  duration_minutes?: number; evidence_mail_id?: string; delete_days?: number;
+  dm_invite?: boolean; appeal_wait_days?: number; modId: string;
+};
+
+export async function coreCreateBan(db: D1Database, env: Env, input: BanInput) {
+  const { uid, reason, servers, modId } = input;
+  const token = env.DISCORD_BOT_TOKEN!;
+  const map = toolServers(env);
+  const results: Record<string, { ok: boolean; status?: number; error?: string }> = {};
+  for (const slug of servers) {
+    if (slug === 'discourse') continue;
+    const g = map[slug];
+    if (!g?.guild) {
+      results[slug] = { ok: false, error: 'unknown server slug' };
+      continue;
+    }
+    const r = await discordJson(token, 'PUT', `/guilds/${g.guild}/bans/${uid}`, { reason, delete_message_seconds: Math.min(Math.max(input.delete_days ?? 0, 0), 7) * 86400 });
+    results[slug] = r.ok ? { ok: true, status: r.status } : { ok: false, status: r.status, error: discordMsg(r) };
+  }
+  if (servers.includes('discourse')) {
+    const r = await suspendDiscourse(db, env, uid, {
+      suspend_until: input.duration_minutes ? new Date(Date.now() + input.duration_minutes * 60000).toISOString() : '2038-01-01T00:00:00Z',
+      reason,
+    });
+    results.discourse = r ?? { ok: false, error: 'discourse not configured' };
+  }
+  const id = newId();
+  const expires = input.duration_minutes ? new Date(Date.now() + input.duration_minutes * 60000).toISOString() : null;
+  const waitDays = Math.min(Math.max(Number(input.appeal_wait_days ?? 0) || 0, 0), 3650);
+  await db.prepare(
+    'INSERT INTO bans (id, user_id, reason, mod_id, servers_json, evidence_mail_id, created_at, expires_at, is_active, appeal_wait_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)',
+  ).bind(id, uid, reason, modId, JSON.stringify(servers), input.evidence_mail_id ?? null, new Date().toISOString(), expires, waitDays).run();
+  await audit(db, { action: 'ban', user_id: uid, mod_id: modId, detail: { servers } });
+  const record: Record<string, { thread_id?: string; error?: string }> = {};
+  for (const slug of servers) {
+    if (slug === 'discourse') continue;
+    record[slug] = await postRecord(db, env, slug, uid, recordEmbed({
+      title: expires ? '🔨 Ban — temporary' : '🔨 Ban — permanent',
+      color: 0xed4245,
+      userId: uid,
+      mod: modId,
+      server: slug,
+      reason,
+      expires,
+      evidenceUrl: input.evidence_mail_id ? inboxUrl(env, input.evidence_mail_id) : undefined,
+    }));
+  }
+  // Auto appeal invite: mint the link and DM it in the same second the ban
+  // lands (best deliverability — the user may never be reachable again).
+  // Opt out per-ban with {"dm_invite": false}.
+  let invite: { url?: string; expires_at?: string; error?: string } | undefined;
+  let dm: { sent?: boolean; error?: string } | undefined;
+  if (input.dm_invite !== false && env.DISCORD_BOT_TOKEN) {
+    try {
+      const link = await mintAppealLink(db, env, modId, id, uid, 7);
+      invite = { url: link.url, expires_at: link.expires_at };
+      const first = servers.find((s) => s !== 'discourse') ?? '';
+      const sname = toolServers(env)[first]?.name || first || 'the server';
+      const res = await sendModDM(env, uid, {
+        title: `Notice from ${sname} Moderation Team`,
+        description: `You have been banned${expires ? ' until ' + expires : ''}. Reason: ${reason}\n\nYou can appeal here (one use, expires ${link.expires_at.slice(0, 10)}): ${link.url}`.slice(0, 4000),
+        color: 5793266,
+        fields: [
+          { name: 'Server', value: sname === 'the server' ? '—' : sname, inline: true },
+          { name: 'Action', value: expires ? 'Ban — temporary' : 'Ban — permanent', inline: true },
+        ],
+        image: { url: assetUrl(env, 'notice.png') },
+        footer: { text: 'Do Not Reply: replies to this bot are not monitored.' },
+        timestamp: new Date().toISOString(),
+      });
+      if (res.channel_id) {
+        dm = { sent: true };
+        await audit(db, { action: 'dm', user_id: uid, mod_id: modId, detail: { server: first, auto: true, ban: id } });
+      } else {
+        dm = { error: res.error };
+        await audit(db, { action: 'dm_failed', user_id: uid, mod_id: modId, detail: { server: first, auto: true, ban: id } });
+      }
+      if (first && toolServers(env)[first]?.records_forum) {
+        await postRecord(db, env, first, uid, recordEmbed({
+          title: '📩 Appeal invite auto-DM’d',
+          color: 0x5865f2,
+          userId: uid,
+          mod: modId,
+          server: first,
+          reason: dm.sent ? `Invite link DM'd (expires ${link.expires_at.slice(0, 10)}).` : `Auto-DM failed: ${dm.error}`,
+        })).catch(() => {});
+      }
+    } catch (err) {
+      invite = { error: String(err) };
+    }
+  }
+  return { id, results, record, invite, dm };
+}
+
+export type TimeoutInput = {
+  uid: string; server: string; duration_minutes: number; reason: string; modId: string;
+};
+
+export async function coreCreateTimeout(db: D1Database, env: Env, input: TimeoutInput) {
+  const { uid, modId } = input;
+  const token = env.DISCORD_BOT_TOKEN!;
+  const g = toolServers(env)[input.server];
+  if (!g?.guild) throw new Error('unknown server slug');
+  const until = new Date(Date.now() + input.duration_minutes * 60000).toISOString();
+  const r = await discordJson(token, 'PATCH', `/guilds/${g.guild}/members/${uid}`, { communication_disabled_until: until });
+  if (!r.ok) throw Object.assign(new Error(discordMsg(r)), { status: r.status });
+  const id = newId();
+  await db.prepare(
+    'INSERT INTO timeouts (id, user_id, reason, mod_id, server_id, expires_at, created_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
+  ).bind(id, uid, input.reason.slice(0, 400), modId, input.server, until, new Date().toISOString()).run();
+  await audit(db, { action: 'timeout', user_id: uid, mod_id: modId, detail: { server: input.server, mins: input.duration_minutes } });
+  const record = await postRecord(db, env, input.server, uid, recordEmbed({
+    title: `⏱️ Timeout — ${input.duration_minutes} min`,
+    color: 0xe8913a,
+    userId: uid,
+    mod: modId,
+    server: input.server,
+    reason: input.reason,
+    expires: until,
+  }));
+  return { id, expires_at: until, record };
+}
+
+// Deactivate one ban row everywhere (Discord guilds + Discourse), audit it,
+// mirror to the record thread. Used by the REST route, appeal approve, and /unban.
+export async function coreUnbanRow(db: D1Database, env: Env, row: any, modId?: string) {
+  const results = await unbanEverywhere(db, env, row);
+  await db.prepare('UPDATE bans SET is_active = 0 WHERE id = ?').bind(row.id).run();
+  await audit(db, { action: 'unban', user_id: row.user_id, mod_id: modId, detail: { servers: JSON.parse(row.servers_json || '[]') } });
+  const record: Record<string, { thread_id?: string; error?: string }> = {};
+  try {
+    for (const slug of JSON.parse(row.servers_json || '[]')) {
+      if (slug === 'discourse') continue;
+      record[slug] = await postRecord(db, env, String(slug), String(row.user_id), recordEmbed({
+        title: '🔓 Unbanned',
+        color: 0x3ba55d,
+        userId: String(row.user_id),
+        mod: modId,
+        server: String(slug),
+      }));
+    }
+  } catch (err) {
+    jsonLog('warn', 'unban record post failed', { id: row.id, error: String(err) });
+  }
+  return { results, record };
+}
+
+// Unban every ACTIVE ban for a user (slash /unban path).
+export async function coreUnbanUser(db: D1Database, env: Env, uid: string, modId: string) {
+  const res = await db.prepare('SELECT * FROM bans WHERE user_id = ? AND is_active = 1').bind(uid).all<any>();
+  const rows = res.results ?? [];
+  const results: Record<string, { ok: boolean; status?: number; error?: string }> = {};
+  for (const row of rows) {
+    const r = await coreUnbanRow(db, env, row, modId);
+    Object.assign(results, r.results);
+  }
+  return { unbanned: rows.map((r: any) => r.id), results };
+}
+
+// ------------------------------------------------------------------ Slash commands
+// Shared with the REST routes above: /ban, /timeout, /unban via Discord.
+// Called from the interactions handler in index.ts after a deferred ACK;
+// returns the (ephemeral) followup text.
+export async function handleSlashCommand(
+  env: Env,
+  cmd: { name: string; opts: Record<string, any>; guildId: string; modId: string },
+): Promise<string> {
+  const map = toolServers(env);
+  const serverName = (slug: string) => map[slug]?.name || slug;
+  const resolveServer = (optSlug: unknown): string | null => {
+    const s = typeof optSlug === 'string' ? optSlug.trim() : '';
+    if (s && map[s]) return s;
+    if (cmd.guildId) {
+      const found = Object.keys(map).find((k) => map[k]?.guild === cmd.guildId);
+      if (found) return found;
+    }
+    return Object.keys(map).find((k) => k !== 'discourse') ?? null;
+  };
+  const needId = (v: unknown): string | null => {
+    const uid = String(v ?? '').trim();
+    return /^\d{10,}$/.test(uid) ? uid : null;
+  };
+  if (cmd.name === 'ban') {
+    const uid = needId(cmd.opts.user);
+    const reason = String(cmd.opts.reason ?? '').trim().slice(0, 1000);
+    if (!uid) return 'Give me a valid user to ban.';
+    if (!reason) return 'Give me a reason.';
+    const slug = resolveServer(cmd.opts.server);
+    if (!slug) return 'No server configured — check MOD_TOOL_SERVERS.';
+    if (!(await checkRateLimit(env.DB, 'ban:' + cmd.modId, 5, 60000))) return 'Rate limited — try again in a bit.';
+    const mins = cmd.opts.minutes == null ? undefined : Math.min(Math.max(Number(cmd.opts.minutes) || 0, 0), 40320);
+    const out = await coreCreateBan(env.DB, env, { uid, reason, servers: [slug], duration_minutes: mins || undefined, dm_invite: true, modId: cmd.modId });
+    if (!Object.values(out.results).some((x) => x.ok)) return 'Ban failed: ' + JSON.stringify(out.results).slice(0, 500);
+    let msg = `Banned <@${uid}> on ${serverName(slug)}` + (mins ? ` for ${mins} min` : ' permanently') + '.';
+    if (out.dm?.sent) msg += ' Appeal link DM’d.';
+    else if (out.invite?.url) msg += ' DM failed (' + (out.dm?.error ?? 'no DM') + ') — invite link (one use): ' + out.invite.url;
+    else if (out.invite?.error) msg += ' Invite failed: ' + out.invite.error;
+    return msg;
+  }
+  if (cmd.name === 'timeout') {
+    const uid = needId(cmd.opts.user);
+    const reason = String(cmd.opts.reason ?? '').trim().slice(0, 400);
+    if (!uid) return 'Give me a valid user to timeout.';
+    if (!reason) return 'Give me a reason.';
+    const slug = resolveServer(cmd.opts.server);
+    if (!slug) return 'No server configured — check MOD_TOOL_SERVERS.';
+    if (!(await checkRateLimit(env.DB, 'timeout:' + cmd.modId, 10, 60000))) return 'Rate limited — try again in a bit.';
+    const mins = Math.min(Math.max(Number(cmd.opts.minutes ?? 60) || 60, 1), 40320);
+    try {
+      const out = await coreCreateTimeout(env.DB, env, { uid, server: slug, duration_minutes: mins, reason, modId: cmd.modId });
+      return `Timed out <@${uid}> on ${serverName(slug)} for ${mins} min (until ${out.expires_at}).`;
+    } catch (err: any) {
+      return 'Timeout failed: ' + (err?.message || 'error');
+    }
+  }
+  if (cmd.name === 'unban') {
+    const uid = needId(cmd.opts.user);
+    if (!uid) return 'Give me a valid user to unban.';
+    if (!(await checkRateLimit(env.DB, 'unban:' + cmd.modId, 10, 60000))) return 'Rate limited — try again in a bit.';
+    const out = await coreUnbanUser(env.DB, env, uid, cmd.modId);
+    if (!out.unbanned.length) return `<@${uid}> has no active bans on record.`;
+    const ok = Object.values(out.results).every((x: any) => x.ok);
+    return ok
+      ? `Unbanned <@${uid}> everywhere (${out.unbanned.length} record${out.unbanned.length > 1 ? 's' : ''}).`
+      : `Unbanned with issues: ${JSON.stringify(out.results).slice(0, 500)}`;
+  }
+  return 'Unknown command.';
 }
 
 // ------------------------------------------------------------------ Bans
@@ -244,7 +686,7 @@ mod.post('/api/bans', async (c) => {
   try {
     const token = c.env.DISCORD_BOT_TOKEN;
     if (!token) return bad('Bot token not configured', 400);
-    const body = await readJson<{ user_id?: string; reason?: string; servers?: string[]; duration_minutes?: number; evidence_mail_id?: string; delete_days?: number }>(c);
+    const body = await readJson<{ user_id?: string; reason?: string; servers?: string[]; duration_minutes?: number; evidence_mail_id?: string; delete_days?: number; dm_invite?: boolean; appeal_wait_days?: number }>(c);
     const uid = (body.user_id ?? '').trim();
     const reason = (body.reason ?? '').slice(0, 1000);
     const servers = Array.isArray(body.servers) ? [...new Set(body.servers.filter(Boolean))] : [];
@@ -254,33 +696,17 @@ mod.post('/api/bans', async (c) => {
     const modId = await actingMod(c.env, c.req.raw.headers);
     if (!(await checkRateLimit(c.env.DB, 'ban:' + modId, 5, 60000)))
       return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
-    const map = toolServers(c.env);
-    const results: Record<string, { ok: boolean; status?: number; error?: string }> = {};
-    for (const slug of servers) {
-      if (slug === 'discourse') continue;
-      const g = map[slug];
-      if (!g?.guild) {
-        results[slug] = { ok: false, error: 'unknown server slug' };
-        continue;
-      }
-      const r = await discordReq(token, 'PUT', `/guilds/${g.guild}/bans/${uid}`, { reason, delete_message_seconds: Math.min(Math.max(body.delete_days ?? 0, 0), 7) * 86400 });
-      results[slug] = { ok: r.ok, status: r.status };
-    }
-    if (servers.includes('discourse')) {
-      const r = await suspendDiscourse(c.env.DB, c.env, uid, {
-        suspend_until: body.duration_minutes ? new Date(Date.now() + body.duration_minutes * 60000).toISOString() : '2038-01-01T00:00:00Z',
-        reason,
-      });
-      results.discourse = r ?? { ok: false, error: 'discourse not configured' };
-    }
-    if (!Object.values(results).some((x) => x.ok)) return c.json({ ok: false, results }, 400);
-    const id = newId();
-    const expires = body.duration_minutes ? new Date(Date.now() + body.duration_minutes * 60000).toISOString() : null;
-    await c.env.DB.prepare(
-      'INSERT INTO bans (id, user_id, reason, mod_id, servers_json, evidence_mail_id, created_at, expires_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)',
-    ).bind(id, uid, reason, modId, JSON.stringify(servers), body.evidence_mail_id ?? null, new Date().toISOString(), expires).run();
-    await audit(c.env.DB, { action: 'ban', user_id: uid, mod_id: modId, detail: { servers } });
-    return c.json({ ok: true, id, results });
+    const out = await coreCreateBan(c.env.DB, c.env, {
+      uid, reason, servers,
+      duration_minutes: body.duration_minutes,
+      evidence_mail_id: body.evidence_mail_id,
+      delete_days: body.delete_days,
+      dm_invite: body.dm_invite,
+      appeal_wait_days: body.appeal_wait_days,
+      modId,
+    });
+    if (!Object.values(out.results).some((x) => x.ok)) return c.json({ ok: false, results: out.results }, 400);
+    return c.json({ ok: true, ...out });
   } catch (err) {
     jsonLog('error', 'ban create failed', { error: String(err) });
     return bad('Failed to create ban', 500);
@@ -289,7 +715,23 @@ mod.post('/api/bans', async (c) => {
 
 mod.get('/api/bans', async (c) => {
   const res = await c.env.DB.prepare('SELECT * FROM bans ORDER BY created_at DESC LIMIT 100').all();
-  return c.json({ ok: true, items: res.results ?? [] });
+  const items: any[] = res.results ?? [];
+  // Flag bans with a live (unused, unexpired) invite link so the UI can show it.
+  try {
+    const links = await c.env.DB.prepare(
+      'SELECT ban_id, expires_at FROM appeal_links WHERE used_at IS NULL AND expires_at > ?',
+    ).bind(new Date().toISOString()).all<{ ban_id: string; expires_at: string }>();
+    const live = new Map((links.results ?? []).map((l) => [l.ban_id, l.expires_at]));
+    for (const b of items) {
+      if (live.has(b.id)) {
+        b.invite_active = true;
+        b.invite_expires_at = live.get(b.id);
+      }
+    }
+  } catch {
+    /* pre-migration: no links table yet */
+  }
+  return c.json({ ok: true, items });
 });
 
 mod.post('/api/bans/:id/unban', async (c) => {
@@ -298,10 +740,9 @@ mod.post('/api/bans/:id/unban', async (c) => {
     const row: any = await c.env.DB.prepare('SELECT * FROM bans WHERE id = ?').bind(id).first();
     if (!row) return bad('ban not found', 404);
     if (!row.is_active) return c.json({ ok: true, already: true });
-    const results = await unbanEverywhere(c.env.DB, c.env, row);
-    await c.env.DB.prepare('UPDATE bans SET is_active = 0 WHERE id = ?').bind(id).run();
-    await audit(c.env.DB, { action: 'unban', user_id: row.user_id, detail: { servers: JSON.parse(row.servers_json || '[]') } });
-    return c.json({ ok: true, results });
+    const modId = await actingMod(c.env, c.req.raw.headers);
+    const out = await coreUnbanRow(c.env.DB, c.env, row, modId);
+    return c.json({ ok: true, ...out });
   } catch (err) {
     jsonLog('error', 'unban failed', { error: String(err) });
     return bad('Failed to unban', 500);
@@ -322,15 +763,15 @@ mod.post('/api/timeouts', async (c) => {
     const modId = await actingMod(c.env, c.req.raw.headers);
     if (!(await checkRateLimit(c.env.DB, 'timeout:' + modId, 10, 60000)))
       return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
-    const until = new Date(Date.now() + mins * 60000).toISOString();
-    const r = await discordReq(token, 'PATCH', `/guilds/${g.guild}/members/${uid}`, { communication_disabled_until: until });
-    if (!r.ok) return c.json({ ok: false, status: r.status }, 400);
-    const id = newId();
-    await c.env.DB.prepare(
-      'INSERT INTO timeouts (id, user_id, reason, mod_id, server_id, expires_at, created_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
-    ).bind(id, uid, (body.reason ?? '').slice(0, 400), modId, body.server, until, new Date().toISOString()).run();
-    await audit(c.env.DB, { action: 'timeout', user_id: uid, mod_id: modId, detail: { server: body.server, mins } });
-    return c.json({ ok: true, id, expires_at: until });
+    try {
+      const out = await coreCreateTimeout(c.env.DB, c.env, {
+        uid, server: body.server ?? '', duration_minutes: mins, reason: body.reason ?? '', modId,
+      });
+      return c.json({ ok: true, ...out });
+    } catch (err: any) {
+      const st = typeof err?.status === 'number' ? err.status : 500;
+      return c.json({ ok: false, status: st, error: err?.message || 'Failed to set timeout' }, st);
+    }
   } catch (err) {
     jsonLog('error', 'timeout create failed', { error: String(err) });
     return bad('Failed to set timeout', 500);
@@ -357,7 +798,13 @@ mod.post('/api/timeouts/:id/remove', async (c) => {
     if (g?.guild) await discordReq(token, 'PATCH', `/guilds/${g.guild}/members/${row.user_id}`, { communication_disabled_until: null });
     await c.env.DB.prepare('UPDATE timeouts SET is_active = 0 WHERE id = ?').bind(id).run();
     await audit(c.env.DB, { action: 'timeout_remove', user_id: row.user_id, detail: { server: row.server_id } });
-    return c.json({ ok: true });
+    const record = await postRecord(c.env.DB, c.env, String(row.server_id), String(row.user_id), recordEmbed({
+      title: '⏱️ Timeout removed early',
+      color: 0x3ba55d,
+      userId: String(row.user_id),
+      server: String(row.server_id),
+    }));
+    return c.json({ ok: true, record });
   } catch (err) {
     jsonLog('error', 'timeout remove failed', { error: String(err) });
     return bad('Failed to remove timeout', 500);
@@ -389,7 +836,19 @@ mod.post('/api/infractions', async (c) => {
       'INSERT INTO infractions (id, user_id, type, reason, mod_id, server_id, mail_item_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     ).bind(id, body.user_id, type, body.reason.slice(0, 1000), modId, body.server_id ?? null, body.mail_item_id ?? null, new Date().toISOString()).run();
     await audit(c.env.DB, { action: 'infraction_' + type, user_id: body.user_id, mod_id: modId, detail: { mail_item_id: body.mail_item_id } });
-    return c.json({ ok: true, id });
+    const slug = recordSlug(c.env, body.server_id);
+    const record = slug
+      ? await postRecord(c.env.DB, c.env, slug, body.user_id, recordEmbed({
+          title: `🗒️ Infraction (${type})`,
+          color: 0xfee75c,
+          userId: body.user_id,
+          mod: modId,
+          server: slug,
+          reason: body.reason.slice(0, 1000),
+          evidenceUrl: body.mail_item_id ? inboxUrl(c.env, body.mail_item_id) : undefined,
+        }))
+      : { error: 'no records forum configured' };
+    return c.json({ ok: true, id, record });
   } catch (err) {
     jsonLog('error', 'infraction create failed', { error: String(err) });
     return bad('Failed to add infraction', 500);
@@ -403,42 +862,105 @@ mod.get('/api/infractions', async (c) => {
   return c.json({ ok: true, items: res.results ?? [] });
 });
 
-mod.get('/api/infractions/:user/timeline', async (c) => {
-  const user = c.req.param('user');
-  if (!/^\d{10,}$/.test(user)) return bad('valid user_id required', 400);
+// Shared user timeline (D1 history across all five tools).
+async function buildTimeline(db: D1Database, user: string): Promise<any[]> {
   const [bans, timeouts, infs, appeals, notes] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM bans WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
-    c.env.DB.prepare('SELECT * FROM timeouts WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
-    c.env.DB.prepare('SELECT * FROM infractions WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
-    c.env.DB.prepare('SELECT * FROM appeals WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
-    c.env.DB.prepare('SELECT * FROM user_notes WHERE user_id = ? ORDER BY created_at DESC').bind(user).all().catch(() => ({ results: [] })),
+    db.prepare('SELECT * FROM bans WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
+    db.prepare('SELECT * FROM timeouts WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
+    db.prepare('SELECT * FROM infractions WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
+    db.prepare('SELECT * FROM appeals WHERE user_id = ? ORDER BY created_at DESC').bind(user).all(),
+    db.prepare('SELECT * FROM user_notes WHERE user_id = ? ORDER BY created_at DESC').bind(user).all().catch(() => ({ results: [] })),
   ]);
   const tagged = (rows: { results?: any[] }, kind: string) => (rows.results ?? []).map((r: any) => ({ kind, ...r, tag: kind }));
-  const timeline = [
+  return [
     ...tagged(bans, 'ban'),
     ...tagged(timeouts, 'timeout'),
     ...tagged(infs, 'infraction'),
     ...tagged(appeals, 'appeal'),
     ...tagged(notes as { results?: any[] }, 'note'),
   ].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-  return c.json({ ok: true, timeline });
+}
+
+mod.get('/api/infractions/:user/timeline', async (c) => {
+  const user = c.req.param('user');
+  if (!/^\d{10,}$/.test(user)) return bad('valid user_id required', 400);
+  return c.json({ ok: true, timeline: await buildTimeline(c.env.DB, user) });
+});
+
+// ------------------------------------------------------------------ Record threads API
+// Search a user's record: linked forum thread(s) + full D1 timeline.
+mod.get('/api/records/:user', async (c) => {
+  const user = c.req.param('user');
+  if (!/^\d{10,}$/.test(user)) return bad('valid user_id required', 400);
+  let rows: any[] = [];
+  try {
+    const res = await c.env.DB.prepare(
+      'SELECT slug, thread_id, forum_id, guild_id, created_at, last_post_at FROM user_records WHERE user_id = ? ORDER BY slug ASC',
+    ).bind(user).all();
+    rows = res.results ?? [];
+  } catch {
+    return c.json({ ok: false, error: 'records table not migrated (need 0010_user_records)' }, 400);
+  }
+  const records = rows.map((r: any) => ({ ...r, url: recordUrl(String(r.guild_id), String(r.thread_id)) }));
+  return c.json({ ok: true, user_id: user, records, timeline: await buildTimeline(c.env.DB, user) });
+});
+
+// Manually create (or re-link) a user's record thread for a slug.
+mod.post('/api/records/:user/ensure', async (c) => {
+  const user = c.req.param('user');
+  if (!/^\d{10,}$/.test(user)) return bad('valid user_id required', 400);
+  const body = await readJson<{ slug?: string }>(c).catch(() => ({} as { slug?: string }));
+  const slug = recordSlug(c.env, body.slug);
+  if (!slug) return bad('unknown server slug, or no records forum configured', 400);
+  const ensured = await ensureRecordThread(c.env.DB, c.env, slug, user);
+  if (!('thread_id' in ensured)) return bad(ensured.error, 400);
+  await audit(c.env.DB, { action: 'record_ensure', user_id: user, detail: { slug } });
+  return c.json({ ok: true, slug, thread_id: ensured.thread_id, url: recordUrl(ensured.guild, ensured.thread_id), created: ensured.created });
+});
+
+// Browse recent record threads.
+mod.get('/api/records', async (c) => {
+  const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 50), 1), 200);
+  try {
+    const res = await c.env.DB.prepare(
+      'SELECT user_id, slug, thread_id, forum_id, guild_id, created_at, last_post_at FROM user_records ORDER BY last_post_at DESC NULLS LAST, created_at DESC LIMIT ?',
+    ).bind(limit).all();
+    const records = (res.results ?? []).map((r: any) => ({ ...r, url: recordUrl(String(r.guild_id), String(r.thread_id)) }));
+    return c.json({ ok: true, records });
+  } catch {
+    return c.json({ ok: false, error: 'records table not migrated (need 0010_user_records)' }, 400);
+  }
 });
 
 // ------------------------------------------------------------------ Appeals
 mod.post('/hooks/appeal', async (c) => {
   try {
-    const body = await readJson<{ user_id?: string; ban_id?: string; answers?: Record<string, string>; honeypot?: string }>(c);
+    const body = await readJson<{ user_id?: string; ban_id?: string; token?: string; answers?: Record<string, string>; honeypot?: string }>(c);
     if (body.honeypot) return c.json({ ok: true }); // silent spam trap
-    const uid = (body.user_id ?? '').trim();
+    let uid = (body.user_id ?? '').trim();
+    let banId = body.ban_id;
+    let linkHash: string | null = null;
+    if (body.token) {
+      // Invite-link path: the token carries the ban + user, no IDs needed from the user.
+      linkHash = await sha256hex(body.token);
+      const link: any = await c.env.DB.prepare('SELECT * FROM appeal_links WHERE token_hash = ?').bind(linkHash).first().catch(() => null);
+      if (!link) return bad('Invalid link', 404);
+      if (link.used_at) return bad('This link has already been used', 410);
+      if (link.expires_at < new Date().toISOString()) return bad('This link has expired', 410);
+      uid = link.user_id;
+      banId = link.ban_id;
+    }
     if (!/^\d{10,}$/.test(uid)) return bad('valid user_id required', 400);
-    if (!body.ban_id) return bad('ban_id required', 400);
-    const ban: any = await c.env.DB.prepare('SELECT * FROM bans WHERE id = ? AND is_active = 1').bind(body.ban_id).first();
+    if (!banId) return bad('ban_id required', 400);
+    const ban: any = await c.env.DB.prepare('SELECT * FROM bans WHERE id = ? AND is_active = 1').bind(banId).first();
     if (!ban) return bad('No active ban found for that ID', 404);
     // The appeal must come from the banned user, not any user with a ban ID.
     if (ban.user_id !== uid) return bad('That ban does not belong to this user', 403);
-    const last: any = await c.env.DB.prepare('SELECT last_appeal_at FROM appeals WHERE ban_id = ? AND user_id = ? ORDER BY created_at DESC').bind(body.ban_id, uid).first();
-    if (last?.last_appeal_at && Date.now() - new Date(last.last_appeal_at).getTime() < 86400000) {
-      return bad('You already appealed in the last 24 hours', 429);
+    const last: any = await c.env.DB.prepare('SELECT id FROM appeals WHERE user_id = ? LIMIT 1').bind(uid).first().catch(() => null);
+    if (last) return bad('You have already used your one appeal for this account', 403);
+    const eligibleAt = appealEligibleAt(ban);
+    if (eligibleAt > new Date().toISOString()) {
+      return bad('Appeals open ' + eligibleAt.slice(0, 10) + ' for this ban', 403);
     }
     const cf = c.req.header('CF-Connecting-IP') ?? c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() ?? '';
     const ipHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(cf || 'unknown')).then((d) => [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join(''));
@@ -455,13 +977,26 @@ mod.post('/hooks/appeal', async (c) => {
     const now = new Date().toISOString();
     await c.env.DB.prepare(
       'INSERT INTO appeals (id, ban_id, user_id, answers_json, status, ip_hash, created_at, last_appeal_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    ).bind(id, body.ban_id, uid, JSON.stringify(answers), 'open', ipHash, now, now).run();
+    ).bind(id, banId, uid, JSON.stringify(answers), 'open', ipHash, now, now).run();
+    if (linkHash) {
+      await c.env.DB.prepare('UPDATE appeal_links SET used_at = ? WHERE token_hash = ?').bind(now, linkHash).run();
+    }
     // Create a Mail item (type=appeal) so it lands in the inbox.
     await c.env.DB.prepare(
       `INSERT INTO inbox_items (id, server, type, tag, author, title, content, time, prio, src, by, url, assigned, archived, completed, roadmap, roadmap_status, roadmap_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, '', '', ?)`,
-    ).bind(newId(), 'appeals', 'appeal', 'appeal', uid, `Appeal for ban ${String(body.ban_id).slice(0, 8)}`, JSON.stringify(answers).slice(0, 4000), 'now', 'high', 'discord', 'appeal', '', null, now).run();
-    await audit(c.env.DB, { action: 'appeal_submit', user_id: uid, detail: { ban_id: body.ban_id } });
-    return c.json({ ok: true, id });
+    ).bind(newId(), 'appeals', 'appeal', 'appeal', uid, `Appeal for ban ${String(banId).slice(0, 8)}`, JSON.stringify(answers).slice(0, 4000), new Date().toISOString(), 'high', 'discord', 'appeal', '', null, now).run();
+    await audit(c.env.DB, { action: 'appeal_submit', user_id: uid, detail: { ban_id: banId } });
+    const record: Record<string, { thread_id?: string; error?: string }> = {};
+    for (const slug of JSON.parse(ban.servers_json || '[]')) {
+      if (slug === 'discourse') continue;
+      record[slug] = await postRecord(c.env.DB, c.env, String(slug), uid, recordEmbed({
+        title: `📩 Appeal submitted (ban ${String(banId).slice(0, 8)})`,
+        color: 0x5865f2,
+        userId: uid,
+        server: String(slug),
+      }));
+    }
+    return c.json({ ok: true, id, record });
   } catch (err) {
     jsonLog('error', 'appeal submit failed', { error: String(err) });
     return bad('Appeal failed', 500);
@@ -490,7 +1025,20 @@ async function decideAppeal(c: any, nextStatus: string, approve: boolean): Promi
     const modId = await actingMod(c.env, c.req.raw.headers);
     await c.env.DB.prepare('UPDATE appeals SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?').bind(nextStatus, modId, new Date().toISOString(), id).run();
     await audit(c.env.DB, { action: 'appeal_' + nextStatus, user_id: row.user_id, mod_id: modId });
-    return c.json({ ok: true });
+    const record: Record<string, { thread_id?: string; error?: string }> = {};
+    const banRow: any = await c.env.DB.prepare('SELECT servers_json FROM bans WHERE id = ?').bind(row.ban_id).first().catch(() => null);
+    for (const slug of JSON.parse(banRow?.servers_json || '[]')) {
+      if (slug === 'discourse') continue;
+      record[slug] = await postRecord(c.env.DB, c.env, String(slug), String(row.user_id), recordEmbed({
+        title: approve ? '✅ Appeal approved' : '❌ Appeal denied',
+        color: approve ? 0x3ba55d : 0xed4245,
+        userId: String(row.user_id),
+        mod: modId,
+        server: String(slug),
+        reason: approve ? 'Full unban triggered (Discord + forum).' : undefined,
+      }));
+    }
+    return c.json({ ok: true, record });
   } catch (err) {
     jsonLog('error', 'appeal decide failed', { error: String(err) });
     return bad('Failed to decide appeal', 500);
@@ -498,11 +1046,133 @@ async function decideAppeal(c: any, nextStatus: string, approve: boolean): Promi
 }
 mod.post('/api/appeals/:id/approve', (c) => decideAppeal(c, 'approved', true));
 mod.post('/api/appeals/:id/deny', (c) => decideAppeal(c, 'denied', false));
+// Aliases for older cached UI builds that call /approved + /denied.
+mod.post('/api/appeals/:id/approved', (c) => decideAppeal(c, 'approved', true));
+mod.post('/api/appeals/:id/denied', (c) => decideAppeal(c, 'denied', false));
+
+// ------------------------------------------------------------------ Appeal invite links
+// Mods mint an expiring, single-use link per ban and DM it to the banned user.
+// The link opens the public /appeals/ form — no ban IDs exposed. Only the
+// SHA-256 hash is stored; the plaintext token is shown once at mint time.
+async function mintAppealLink(
+  db: D1Database,
+  env: Env,
+  modId: string,
+  banId: string,
+  userId: string,
+  days: number,
+): Promise<{ url: string; expires_at: string }> {
+  const span = Math.min(Math.max(Number(days) || 7, 1), 30);
+  const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+  const now = new Date();
+  const expires = new Date(now.getTime() + span * 86400000).toISOString();
+  // Supersede: one live link per ban — retire any previous unused ones first.
+  await db.prepare('UPDATE appeal_links SET used_at = ? WHERE ban_id = ? AND used_at IS NULL').bind(now.toISOString(), banId).run().catch(() => {});
+  await db.prepare(
+    'INSERT INTO appeal_links (token_hash, ban_id, user_id, created_by, created_at, expires_at, used_at) VALUES (?, ?, ?, ?, ?, ?, NULL)',
+  ).bind(await sha256hex(token), banId, userId, modId, now.toISOString(), expires).run();
+  await audit(db, { action: 'appeal_link_mint', user_id: userId, mod_id: modId, detail: { ban_id: banId, days: span } });
+  const host = env.COMMUNITY_DOMAIN || env.PERSONAL_DOMAIN || 'mod.tep.one';
+  return { url: `https://${host}/appeals/?token=${token}`, expires_at: expires };
+}
+
+// Open (or reuse) a DM channel with a user and send one embed. Never throws:
+// returns { channel_id } or { error } (closed DMs, unknown user, …).
+async function sendModDM(
+  env: Env,
+  userId: string,
+  embed: Record<string, unknown>,
+): Promise<{ channel_id?: string; error?: string }> {
+  const token = env.DISCORD_BOT_TOKEN;
+  if (!token) return { error: 'bot token not configured' };
+  try {
+    const dm = await discordJson(token, 'POST', '/users/@me/channels', { recipient_id: userId });
+    if (!dm.ok || !dm.data?.id) return { error: dm.status === 404 ? 'Unknown user' : discordMsg(dm) };
+    const sent = await discordJson(token, 'POST', `/channels/${dm.data.id}/messages`, { embeds: [embed] });
+    if (!sent.ok) {
+      const code = (sent.data as any)?.code;
+      if (code === 50007) return { error: 'DMs closed — this user has DMs from server members off' };
+      if (sent.status === 403) return { error: `Bot cannot message this user (${discordMsg(sent)})` };
+      return { error: discordMsg(sent) };
+    }
+    return { channel_id: String(dm.data.id) };
+  } catch (err) {
+    return { error: String(err) };
+  }
+}
+mod.post('/api/appeal-links', async (c) => {
+  try {
+    const body = await readJson<{ ban_id?: string; days?: number }>(c);
+    const ban: any = await c.env.DB.prepare('SELECT * FROM bans WHERE id = ?').bind(body.ban_id ?? '').first();
+    if (!ban) return bad('ban not found', 404);
+    if (!ban.is_active) return bad('ban is not active', 400);
+    const modId = await actingMod(c.env, c.req.raw.headers);
+    const link = await mintAppealLink(c.env.DB, c.env, modId, ban.id, ban.user_id, Number(body.days ?? 7));
+    return c.json({ ok: true, url: link.url, expires_at: link.expires_at });
+  } catch (err) {
+    jsonLog('error', 'appeal link mint failed', { error: String(err) });
+    return bad('Failed to mint appeal link', 500);
+  }
+});
+
+// Public: look up active bans for a user ID (link-free appeals). No auth —
+// user IDs aren't secret; the submit path keeps the 24h + IP brakes.
+mod.get('/hooks/appeal-lookup', async (c) => {
+  try {
+    const uid = (c.req.query('user_id') ?? '').trim();
+    if (!/^\d{10,}$/.test(uid)) return bad('valid user_id required', 400);
+    const cf = c.req.header('CF-Connecting-IP') ?? c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() ?? '';
+    const ipHash = await sha256hex(cf || 'unknown');
+    if (!(await checkRateLimit(c.env.DB, 'appeal-lookup:' + ipHash, 20, 60000)))
+      return Response.json({ ok: false, error: 'Too many lookups, try again later' }, { status: 429 });
+    const res = await c.env.DB.prepare(
+      'SELECT id, reason, created_at, expires_at, servers_json, appeal_wait_days FROM bans WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC',
+    ).bind(uid).all<any>().catch(() => ({ results: [] }));
+    const bans = (res.results ?? []).map((b: any) => ({
+      ban_id: b.id,
+      reason: b.reason,
+      created_at: b.created_at,
+      expires_at: b.expires_at,
+      servers: JSON.parse(b.servers_json || '[]'),
+      eligible_at: appealEligibleAt(b),
+    }));
+    if (!bans.length) return bad('No active ban found for that user', 404);
+    return c.json({ ok: true, user_id: uid, bans });
+  } catch {
+    return bad('Lookup failed', 500);
+  }
+});
+
+// Public: describe a link for the /appeals/ form. No auth — the token is unguessable.
+mod.get('/hooks/appeal-link', async (c) => {
+  try {
+    const token = c.req.query('token') ?? '';
+    if (!token) return bad('token required', 400);
+    const row: any = await c.env.DB.prepare('SELECT * FROM appeal_links WHERE token_hash = ?').bind(await sha256hex(token)).first().catch(() => null);
+    if (!row) return bad('Invalid link', 404);
+    if (row.used_at) return bad('This link has already been used', 410);
+    if (row.expires_at < new Date().toISOString()) return bad('This link has expired', 410);
+    const ban: any = await c.env.DB.prepare('SELECT reason, created_at, expires_at, servers_json, appeal_wait_days FROM bans WHERE id = ?').bind(row.ban_id).first().catch(() => null);
+    const eligibleAt = ban ? appealEligibleAt(ban) : null;
+    return c.json({
+      ok: true,
+      user_id: row.user_id,
+      expires_at: row.expires_at,
+      eligible_at: eligibleAt,
+      appealable: !eligibleAt || eligibleAt <= new Date().toISOString(),
+      ban: ban
+        ? { reason: ban.reason, created_at: ban.created_at, expires_at: ban.expires_at, servers: JSON.parse(ban.servers_json || '[]') }
+        : null,
+    });
+  } catch {
+    return bad('Failed to read link', 500);
+  }
+});
 
 // ------------------------------------------------------------------ User notes
 mod.post('/api/user-notes', async (c) => {
   try {
-    const body = await readJson<{ user_id?: string; note?: string; mail_item_id?: string }>(c);
+    const body = await readJson<{ user_id?: string; note?: string; mail_item_id?: string; server?: string }>(c);
     const uid = (body.user_id ?? '').trim();
     if (!/^\d{10,}$/.test(uid)) return bad('valid user_id required', 400);
     if (!body.note?.trim()) return bad('user_id and note required', 400);
@@ -513,7 +1183,19 @@ mod.post('/api/user-notes', async (c) => {
     await c.env.DB.prepare(
       'INSERT INTO user_notes (id, user_id, mod_id, note, mail_item_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     ).bind(id, uid, modId, body.note.slice(0, 2000), body.mail_item_id ?? null, new Date().toISOString()).run();
-    return c.json({ ok: true, id });
+    const slug = recordSlug(c.env, body.server);
+    const record = slug
+      ? await postRecord(c.env.DB, c.env, slug, uid, recordEmbed({
+          title: '📝 Mod note',
+          color: 0x99aab5,
+          userId: uid,
+          mod: modId,
+          server: slug,
+          reason: body.note.slice(0, 2000),
+          evidenceUrl: body.mail_item_id ? inboxUrl(c.env, body.mail_item_id) : undefined,
+        }))
+      : { error: 'no records forum configured' };
+    return c.json({ ok: true, id, record });
   } catch (err) {
     jsonLog('error', 'user note failed', { error: String(err) });
     return bad('Failed to add note', 500);
@@ -534,6 +1216,59 @@ mod.get('/api/user-notes/:user', async (c) => {
   if (!/^\d{10,}$/.test(user)) return bad('valid user_id required', 400);
   const res = await c.env.DB.prepare('SELECT * FROM user_notes WHERE user_id = ? ORDER BY created_at DESC LIMIT 200').bind(user).all();
   return c.json({ ok: true, items: res.results ?? [] });
+});
+
+// ------------------------------------------------------------------ DM a user
+// Mod-team DM via the bot. Mirrored to the user's record thread for
+// accountability. Fails gracefully when the user has DMs closed.
+mod.post('/api/dm', async (c) => {
+  try {
+    const token = c.env.DISCORD_BOT_TOKEN;
+    if (!token) return bad('Bot token not configured', 400);
+    const body = await readJson<{ user_id?: string; server?: string; action?: string; message?: string }>(c);
+    const uid = (body.user_id ?? '').trim();
+    const msg = (body.message ?? '').trim();
+    if (!/^\d{10,}$/.test(uid)) return bad('valid user_id required', 400);
+    if (!msg) return bad('message required', 400);
+    if (msg.length > 2000) return bad('message too long (max 2000 chars)', 400);
+    const slug = recordSlug(c.env, body.server) ?? (body.server ?? '').trim();
+    const modId = await actingMod(c.env, c.req.raw.headers);
+    if (!(await checkRateLimit(c.env.DB, 'dm:' + modId, 10, 60000)))
+      return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 });
+    const serverName = toolServers(c.env)[slug]?.name || slug || 'the server';
+    const sent = await sendModDM(c.env, uid, {
+      title: `Notice from ${serverName} Moderation Team`,
+      description: msg.slice(0, 4000),
+      color: 5793266,
+      fields: [
+        { name: 'Server', value: serverName === 'the server' ? '—' : serverName, inline: true },
+        { name: 'Action', value: (body.action ?? '').trim().slice(0, 100) || 'Notice', inline: true },
+      ],
+      image: { url: assetUrl(c.env, 'notice.png') },
+      footer: { text: 'Do Not Reply: replies to this bot are not monitored.' },
+      timestamp: new Date().toISOString(),
+    });
+    if (sent.error) {
+      await audit(c.env.DB, { action: 'dm_failed', user_id: uid, mod_id: modId, detail: { server: slug } });
+      return c.json({ ok: false, error: sent.error }, 400);
+    }
+    await audit(c.env.DB, { action: 'dm', user_id: uid, mod_id: modId, detail: { server: slug } });
+    let record: { thread_id?: string; error?: string } | undefined;
+    if (slug && toolServers(c.env)[slug]?.records_forum) {
+      record = await postRecord(c.env.DB, c.env, slug, uid, recordEmbed({
+        title: '📩 DM sent to user',
+        color: 0x5865f2,
+        userId: uid,
+        mod: modId,
+        server: slug,
+        reason: msg,
+      }));
+    }
+    return c.json({ ok: true, record });
+  } catch (err) {
+    jsonLog('error', 'dm failed', { error: String(err) });
+    return bad('Failed to send DM', 500);
+  }
 });
 
 // ------------------------------------------------------------------ Identity links
@@ -586,10 +1321,14 @@ mod.delete('/api/links/:discordId/:platform', async (c) => {
 const SNOW = /^\d{10,}$/;
 
 async function discordJson(token: string, method: string, path: string, body?: unknown): Promise<{ ok: boolean; status: number; data?: any }> {
+  // No Content-Type on bodyless requests (notably DELETE): some Discord
+  // endpoints reject a declared JSON type with an empty body.
+  const headers: Record<string, string> = { Authorization: 'Bot ' + token };
+  if (body !== undefined) headers['content-type'] = 'application/json';
   const r = await fetch('https://discord.com/api/v10' + path, {
     method,
-    headers: { Authorization: 'Bot ' + token, 'content-type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
   let data: any = null;
   try {
@@ -598,6 +1337,26 @@ async function discordJson(token: string, method: string, path: string, body?: u
     /* non-JSON (e.g. 204) */
   }
   return { ok: r.ok, status: r.status, data };
+}
+
+// Short human-readable Discord API error (surfaced in UI toasts for faster fixes).
+function discordMsg(r: { status: number; data?: any }): string {
+  const d: any = r.data;
+  if (d && typeof d === 'object') {
+    if (typeof d.message === 'string' && d.message) return d.message;
+    try {
+      return JSON.stringify(d).slice(0, 300);
+    } catch {
+      /* fallthrough */
+    }
+  }
+  return 'HTTP ' + r.status;
+}
+
+// Earliest moment a ban can be appealed (ban date + per-ban wait, default 0).
+function appealEligibleAt(ban: { created_at?: string; appeal_wait_days?: unknown }): string {
+  const wait = Math.max(Number((ban as any)?.appeal_wait_days ?? 0) || 0, 0);
+  return new Date(Date.parse(ban?.created_at || new Date().toISOString()) + wait * 86400000).toISOString();
 }
 
 async function mailResult(
@@ -612,7 +1371,7 @@ async function mailResult(
       )
       .bind(
         newId(), input.server.slice(0, 80), 'ticket', 'ticket', 'bot-apply', input.title.slice(0, 300),
-        input.content.slice(0, 8000), 'now', 'normal', 'discord', input.by.slice(0, 80), '#', null, 0,
+        input.content.slice(0, 8000), new Date().toISOString(), 'normal', 'discord', input.by.slice(0, 80), '#', null, 0,
         new Date().toISOString(),
       )
       .run();

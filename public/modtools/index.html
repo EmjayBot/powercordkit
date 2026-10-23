@@ -5,55 +5,81 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Command</title>
 <link rel="icon" href="/assets/powercordkit_logo.png" />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
-:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90;--ok:#3ba55d;--no:#ed4245}
+:root{--b:#5865F2;--bg:#0e0e10;--p:#17171a;--p2:#1e1e22;--bd:#26262b;--t:#f0f0f2;--m:#8a8a90;--ok:#3ba55d;--no:#ed4245;--warn:#e0a63c}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--t)}
-.wrap{max-width:1000px;margin:0 auto;padding:22px 16px 80px}
-h1{font-size:22px;margin:0 0 4px}
-.sub{color:var(--m);font-size:13px;margin:0 0 16px}
-.tabs{display:flex;gap:6px;border-bottom:1px solid var(--bd);margin-bottom:16px;flex-wrap:wrap}
+.wrap{max-width:1000px;margin:0 auto;padding:22px 16px 100px}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--m);font-size:13px;margin:0 0 12px}
+.statusbar{display:flex;align-items:center;gap:8px;background:var(--p);border:1px solid var(--bd);border-radius:10px;padding:8px 12px;font-size:12px;color:var(--m);margin-bottom:14px}
+.statusbar.bad{border-color:var(--no)}
+.statusbar .grow{flex:1}
+.statusbar button{background:none;border:1px solid var(--bd);border-radius:6px;color:var(--t);font-size:11px;padding:4px 10px;cursor:pointer}
+.statusbar button:hover{border-color:var(--b)}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--bd);margin-bottom:16px;flex-wrap:wrap;position:sticky;top:0;background:var(--bg);padding-top:8px;z-index:5}
 .tab{padding:9px 14px;font-size:13px;color:var(--m);cursor:pointer;border:1px solid transparent;border-radius:10px 10px 0 0;font-weight:600}
+.tab:hover{color:var(--t)}
 .tab.on{background:var(--p2);color:var(--t);border-color:var(--bd) var(--bd) transparent}
-.pane{display:none}.pane.on{display:block}
+.pane{display:none}.pane.on{display:block;animation:fade .15s ease-in}
+@keyframes fade{from{opacity:.4}to{opacity:1}}
+.panehead{font-size:12px;color:var(--m);margin:0 0 10px;line-height:1.5}
 .form{background:var(--p);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .inp{background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;color:var(--t);font-size:13px;outline:none;flex:1;min-width:120px}
-select.inp{flex:0 0 auto}
+.inp:focus{border-color:var(--b)}
+select.inp{flex:0 0 auto;min-width:170px;cursor:pointer}
+select.inp:disabled{opacity:.55;cursor:not-allowed}
 .btn{background:var(--b);color:#fff;border:0;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:hover{filter:brightness(1.1)}
+.btn:disabled{opacity:.5;cursor:not-allowed;filter:none}
 .btn.ghost{background:var(--p2);border:1px solid var(--bd);color:var(--t)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
 .chip{font-size:11px;padding:4px 9px;border-radius:999px;background:var(--p2);border:1px solid var(--bd);cursor:pointer;color:var(--m)}
-.chip.sel{border-color:var(--b);color:var(--t)}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--m);text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd)}
-td{padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
+.chip:hover{color:var(--t)}
+.chip.sel{border-color:var(--b);color:var(--t);background:rgba(88,101,242,.12)}
+.chip.none{cursor:default;color:var(--no)}
+table{width:100%;border-collapse:collapse;font-size:13px;background:var(--p);border:1px solid var(--bd);border-radius:12px;overflow:hidden}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--m);text-align:left;padding:10px 12px;border-bottom:1px solid var(--bd);background:var(--p2)}
+td{padding:9px 12px;border-bottom:1px solid var(--bd);vertical-align:top}
+tr:last-child td{border-bottom:0}
+.badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;border-radius:999px;background:rgba(88,101,242,.15);color:#aab1ff;border:1px solid rgba(88,101,242,.4)}
 .ok{color:var(--ok)}.no{color:var(--no)}.dim{color:var(--m);font-size:12px}
-.empty{color:var(--m);font-size:13px;padding:20px 4px}
+.empty{color:var(--m);font-size:13px;padding:20px 4px;border:1px dashed var(--bd);border-radius:12px;text-align:center}
 .row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:130px}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:var(--p2);border:1px solid var(--bd);color:var(--t);font-size:13px;padding:11px 16px;border-radius:10px;max-width:min(92vw,700px);word-break:break-word;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{border-color:var(--no)}
+#toast.good{border-color:var(--ok)}
 </style>
 </head>
 <body>
 <div id="pck-nav"></div>
 <div class="wrap">
   <h1>🛡️ Command</h1>
-  <div class="sub">Bans · Timeouts · Infractions · Appeals · Notes — the moderation console.</div>
+  <div class="sub">Bans · Timeouts · History · Appeals · Notes · Records · DM — the moderation console.</div>
+  <div class="statusbar" id="statusbar" style="display:none"><span class="grow" id="status-text"></span><button id="status-retry" type="button">Retry</button></div>
 
   <div class="tabs">
     <div class="tab on" data-t="bans">Bans</div>
     <div class="tab" data-t="timeouts">Timeouts</div>
-    <div class="tab" data-t="infractions">Infractions</div>
+    <div class="tab" data-t="history">History</div>
     <div class="tab" data-t="appeals">Appeals</div>
     <div class="tab" data-t="notes">Notes</div>
+    <div class="tab" data-t="records">Records</div>
+    <div class="tab" data-t="dm">DM</div>
   </div>
 
   <!-- BANS -->
   <div class="pane on" id="pane-bans">
+    <p class="panehead">Ban across one or more servers at once. Blank minutes = permanent; temp bans auto-expire via cron.</p>
     <div class="form">
       <input class="inp" id="b-user" placeholder="User ID / snowflake" />
       <input class="inp" id="b-reason" placeholder="Reason" style="flex:2" />
       <input class="inp" id="b-mins" placeholder="Temp mins (blank = perm)" style="max-width:140px" />
-      <div class="chips" id="b-servers"></div>
-      <button class="btn" id="b-create">Ban</button>
+      <input class="inp" id="b-appeal-wait" placeholder="Appeal wait days (0 = now)" style="max-width:180px" />
+      <label class="check" style="font-size:12px;color:var(--m)"><input type="checkbox" id="b-dm" checked /> DM appeal link</label>
+      <div class="chips" id="b-servers"><span class="chip none">Loading servers…</span></div>
+      <button class="btn" id="b-create" disabled>Ban</button>
     </div>
     <div class="form" style="margin-top:-8px">
       <input class="inp" id="l-discord" placeholder="Discord ID to link" style="max-width:180px" />
@@ -68,23 +94,22 @@ td{padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
 
   <!-- TIMEOUTS -->
   <div class="pane" id="pane-timeouts">
+    <p class="panehead">Per-server mute. Duration 1–40320 minutes (28 days max). Expiry is automatic.</p>
     <div class="form">
       <input class="inp" id="t-user" placeholder="User ID / snowflake" />
-      <select class="inp" id="t-server"></select>
+      <select class="inp" id="t-server"><option value="">Loading servers…</option></select>
       <input class="inp" id="t-mins" value="60" placeholder="Minutes" style="max-width:110px" />
       <input class="inp" id="t-reason" placeholder="Reason" style="flex:2" />
-      <button class="btn" id="t-create">Timeout</button>
+      <button class="btn" id="t-create" disabled>Timeout</button>
     </div>
     <div id="t-list"></div>
   </div>
 
-  <!-- INFRACTIONS -->
-  <div class="pane" id="pane-infractions">
+  <!-- HISTORY -->
+  <div class="pane" id="pane-history">
+    <p class="panehead">Look up any user ID for their full cross-tool history — bans, timeouts, infractions, appeals, notes. Read-only; actions happen in their own tabs.</p>
     <div class="form">
-      <input class="inp" id="i-user" placeholder="User ID to look up / add to" />
-      <select class="inp" id="i-type"><option>warn</option><option>mute</option><option>kick</option><option>ban</option><option>note</option></select>
-      <input class="inp" id="i-reason" placeholder="Reason" style="flex:2" />
-      <button class="btn" id="i-add">Add</button>
+      <input class="inp" id="i-user" placeholder="User ID to look up" />
       <button class="btn ghost" id="i-load">Timeline</button>
     </div>
     <div id="i-list"></div>
@@ -92,6 +117,7 @@ td{padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
 
   <!-- APPEALS -->
   <div class="pane" id="pane-appeals">
+    <p class="panehead">Review user appeals. Approving triggers the full unban (Discord + forum) automatically.</p>
     <div class="form">
       <select class="inp" id="a-status"><option>open</option><option>approved</option><option>denied</option></select>
       <button class="btn" id="a-load">Refresh</button>
@@ -101,24 +127,66 @@ td{padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
 
   <!-- NOTES -->
   <div class="pane" id="pane-notes">
+    <p class="panehead">Private mod-only notes. Never shown to the user; surfaced in timelines and Mail detail.</p>
     <div class="form">
       <input class="inp" id="n-user" placeholder="User ID / snowflake" />
+      <select class="inp" id="n-server"><option value="">Loading servers…</option></select>
       <input class="inp" id="n-text" placeholder="Private note" style="flex:2" />
       <input class="inp" id="n-mail" placeholder="Evidence mail ID (optional)" style="max-width:200px" />
-      <button class="btn" id="n-add">Add note</button>
+      <button class="btn" id="n-add" disabled>Add note</button>
       <button class="btn ghost" id="n-load">Load</button>
     </div>
     <div id="n-list"></div>
   </div>
+
+  <!-- RECORDS -->
+  <div class="pane" id="pane-records">
+    <p class="panehead">One forum thread per user per server, auto-posted on every action. Search any ID to see its threads plus full history.</p>
+    <div class="form">
+      <input class="inp" id="r-user" placeholder="User ID / snowflake" />
+      <select class="inp" id="r-server"><option value="">Loading servers…</option></select>
+      <button class="btn" id="r-load">Load record</button>
+      <button class="btn ghost" id="r-ensure" disabled>Create / link thread</button>
+    </div>
+    <div id="r-links" class="dim" style="margin-bottom:12px"></div>
+    <div id="r-timeline"></div>
+  </div>
+
+  <!-- DM -->
+  <div class="pane" id="pane-dm">
+    <p class="panehead">Send a one-way mod-team DM through the bot — replies are not monitored, so say everything in the message. If the user has DMs closed you'll get a clear "DMs closed" instead. Every DM is mirrored to their record thread.</p>
+    <div class="form">
+      <input class="inp" id="d-user" placeholder="User ID / snowflake" />
+      <select class="inp" id="d-server"><option value="">Loading servers…</option></select>
+      <input class="inp" id="d-action" placeholder="Action (e.g. Warning, Timeout — 60 min)" style="max-width:220px" />
+      <input class="inp" id="d-text" placeholder="Message to the user (max 2000 chars)" style="flex:2" />
+      <button class="btn" id="d-send" disabled>Send DM</button>
+    </div>
+  </div>
 </div>
+<div id="toast"></div>
 <script src="/assets/site.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let toastTimer = null;
+function toast(msg, kind) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = 'show' + (kind === 'err' ? ' err' : kind === 'good' ? ' good' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 4500);
+}
 async function api(path, opts) {
   opts = opts || {};
   const headers = Object.assign({}, opts.headers, { 'X-Mod-Key': sessionStorage.getItem('pck-mod-key') || '' });
-  let r = await fetch(path, Object.assign({}, opts, { headers }));
+  let r;
+  try {
+    r = await fetch(path, Object.assign({}, opts, { headers }));
+  } catch (e) {
+    toast('Network error reaching ' + path, 'err');
+    throw e;
+  }
   if (r.status === 401) {
     if (window.PCK && !window.PCK.authUI()) return r; // auth UI off: fail closed, no redirects or key popups
     if (window.PCK && window.PCK.whenReady) { await window.PCK.whenReady(); if (!window.PCK.authUI()) return r; } // first paint: config may still be loading
@@ -134,23 +202,54 @@ async function api(path, opts) {
 }
 
 const SERVERS = [];
+const SERVER_NAMES = {};
 const selB = new Set();
+const label = (s) => esc(SERVER_NAMES[s] || s);
+const CREATE_BTNS = ['b-create', 't-create', 'n-add', 'r-ensure', 'd-send'];
 
 const urlParams = new URLSearchParams(location.search);
 const userParam = urlParams.get('user');
-if (userParam) { $('i-user').value = userParam; if ($('n-user')) $('n-user').value = userParam; }
+if (userParam) { $('i-user').value = userParam; if ($('n-user')) $('n-user').value = userParam; if ($('r-user')) $('r-user').value = userParam; if ($('d-user')) $('d-user').value = userParam; }
+
+function setStatus(ok, text) {
+  const bar = $('statusbar');
+  if (ok === true) { bar.style.display = 'none'; return; } // healthy: selectors already show the servers
+  bar.style.display = '';
+  bar.className = 'statusbar' + (ok === false ? ' bad' : '');
+  $('status-text').textContent = text;
+}
+function setServersUI(loaded) {
+  const disc = SERVERS.filter((s) => s !== 'discourse');
+  const opts = loaded && disc.length
+    ? disc.map((s) => '<option value="' + esc(s) + '">' + label(s) + '</option>').join('')
+    : '<option value="">' + (loaded ? '(no servers configured)' : '(couldn\'t load servers)') + '</option>';
+  for (const id of ['t-server', 'n-server', 'r-server', 'd-server']) { if ($(id)) $(id).innerHTML = opts; }
+  for (const id of CREATE_BTNS) { if ($(id)) $(id).disabled = !(loaded && disc.length); }
+  if (loaded && disc.length) setStatus(true);
+  else if (loaded) setStatus(false, 'No servers configured — check MOD_TOOL_SERVERS, then Retry.');
+  else setStatus(false, 'Couldn\'t load servers — log in, then Retry.');
+}
 
 async function loadServers() {
-  const r = await api('/api/modtools/servers');
-  if (r.ok) {
-    const j = await r.json();
-    SERVERS.length = 0;
-    (Array.isArray(j.servers) ? j.servers : []).forEach((s) => SERVERS.push(String(s)));
+  setStatus(null, 'Loading servers…');
+  try {
+    const r = await api('/api/modtools/servers');
+    if (r.ok) {
+      const j = await r.json();
+      SERVERS.length = 0;
+      (Array.isArray(j.servers) ? j.servers : []).forEach((s) => SERVERS.push(String(s)));
+      for (const k of Object.keys(SERVER_NAMES)) delete SERVER_NAMES[k];
+      for (const [k, v] of Object.entries(j.names || {})) SERVER_NAMES[k] = String(v);
+      setServersUI(true);
+    } else {
+      setServersUI(false);
+    }
+  } catch (e) {
+    setServersUI(false);
   }
   chips();
-  const disc = SERVERS.filter((s) => s !== 'discourse');
-  $('t-server').innerHTML = disc.length ? disc.map((s) => '<option>' + esc(s) + '</option>').join('') : '<option value="">(no servers)</option>';
 }
+$('status-retry').onclick = loadServers;
 
 // Tabs
 document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
@@ -162,7 +261,9 @@ document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
 
 // Server chips (bans)
 function chips() {
-  $('b-servers').innerHTML = SERVERS.map((s) => '<span class="chip' + (selB.has(s) ? ' sel' : '') + '" data-s="' + s + '">' + s + '</span>').join('') || '';
+  const box = $('b-servers');
+  if (!SERVERS.length) { box.innerHTML = '<span class="chip none">No servers loaded — see status above</span>'; return; }
+  box.innerHTML = SERVERS.map((s) => '<span class="chip' + (selB.has(s) ? ' sel' : '') + '" data-s="' + esc(s) + '">' + label(s) + '</span>').join('');
   document.querySelectorAll('#b-servers .chip').forEach((c) => c.onclick = () => { const s = c.dataset.s; selB.has(s) ? selB.delete(s) : selB.add(s); chips(); });
 }
 
@@ -170,16 +271,40 @@ function chips() {
 async function loadBans() {
   const r = await api('/api/bans'); if (!r.ok) return;
   const j = await r.json();
-  $('b-list').innerHTML = j.items.length ? '<table><tr><th>User</th><th>Reason</th><th>Servers</th><th>Expires</th><th>Evidence</th><th>Mod</th><th>Date</th><th>Status</th><th></th></tr>' + j.items.map((b) => '<tr><td>' + esc(b.user_id) + '</td><td>' + esc(b.reason) + '</td><td>' + esc(b.servers_json) + '</td><td class="dim">' + esc(b.expires_at || 'perm') + '</td><td>' + (b.evidence_mail_id ? '<a style="color:var(--b)" href="/mail/inbox/?q=' + encodeURIComponent(b.evidence_mail_id) + '">' + esc(String(b.evidence_mail_id).slice(0,8)) + '</a>' : '<span class="dim">—</span>') + '</td><td>' + esc(b.mod_id) + '</td><td class="dim">' + esc((b.created_at||'').slice(0,10)) + '</td><td>' + (b.is_active ? '<span class="ok">active</span>' : '<span class="dim">inactive</span>') + '</td><td>' + (b.is_active ? '<button class="btn ghost" data-unban="' + b.id + '">Unban</button>' : '') + '</td></tr>').join('') + '</table>' : '<div class="empty">No bans yet.</div>';
-  document.querySelectorAll('[data-unban]').forEach((x) => x.onclick = async () => { await api('/api/bans/' + x.dataset.unban + '/unban', { method: 'POST' }); loadBans(); });
+  $('b-list').innerHTML = j.items.length ? '<table><tr><th>User</th><th>Reason</th><th>Servers</th><th>Expires</th><th>Evidence</th><th>Mod</th><th>Date</th><th>Status</th><th></th></tr>' + j.items.map((b) => '<tr><td>' + esc(b.user_id) + '</td><td>' + esc(b.reason) + '</td><td>' + esc(b.servers_json) + '</td><td class="dim">' + esc(b.expires_at || 'perm') + '</td><td>' + (b.evidence_mail_id ? '<a style="color:var(--b)" href="/mail/inbox/?q=' + encodeURIComponent(b.evidence_mail_id) + '">' + esc(String(b.evidence_mail_id).slice(0,8)) + '</a>' : '<span class="dim">—</span>') + '</td><td>' + esc(b.mod_id) + '</td><td class="dim">' + esc((b.created_at||'').slice(0,10)) + '</td><td>' + (b.is_active ? '<span class="ok">active</span>' : '<span class="dim">inactive</span>') + (b.invite_active ? ' <span class="dim">🔗 link thru ' + esc(String(b.invite_expires_at || '').slice(0, 10)) + '</span>' : '') + '</td><td>' + (b.is_active ? '<button class="btn ghost" data-invite="' + b.id + '" data-user="' + esc(b.user_id) + '">' + (b.invite_active ? 'New link' : 'Invite') + '</button> <button class="btn ghost" data-unban="' + b.id + '">Unban</button>' : '') + '</td></tr>').join('') + '</table>' : '<div class="empty">No bans yet.</div>';
+  document.querySelectorAll('[data-unban]').forEach((x) => x.onclick = async () => {
+    const r = await api('/api/bans/' + x.dataset.unban + '/unban', { method: 'POST' });
+    const j = await r.json().catch(() => ({}));
+    const det = j.results ? Object.entries(j.results).map(([s, v]) => s + ': ' + (v.ok ? 'ok' : ('FAILED (' + (v.error || v.status) + ')'))).join(' · ') : '';
+    toast(j.ok ? 'Unbanned' + (det ? ' — ' + det : '') : ('Failed: ' + (j.error || r.status)), j.ok ? 'good' : 'err');
+    loadBans();
+  });
+  document.querySelectorAll('[data-invite]').forEach((x) => x.onclick = async () => {
+    const r = await api('/api/appeal-links', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ban_id: x.dataset.invite }) });
+    const j = await r.json().catch(() => ({}));
+    if (!j.ok) return toast('Failed: ' + (j.error || r.status), 'err');
+    $('d-user').value = x.dataset.user || '';
+    if ($('d-server')) { /* keep current server pick */ }
+    $('d-action').value = 'Ban appeal invite';
+    $('d-text').value = 'You can appeal this ban here (one use, expires ' + String(j.expires_at || '').slice(0, 10) + '): ' + j.url;
+    document.querySelector('.tab[data-t="dm"]').click();
+    toast('Appeal link ready in the DM tab — hit Send DM', 'good');
+  });
 }
 $('b-create').onclick = async () => {
   const user = $('b-user').value.trim(), reason = $('b-reason').value.trim(), mins = $('b-mins').value;
-  if (!user || !reason || selB.size === 0) return alert('User, reason, and at least one server required');
-  const r = await api('/api/bans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: user, reason, servers: [...selB], duration_minutes: mins ? Number(mins) : undefined }) });
-  alert(JSON.stringify(await r.json()));
-loadServers();
-loadBans();
+  if (!user || !reason || selB.size === 0) return toast('User, reason, and at least one server required', 'err');
+  const r = await api('/api/bans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: user, reason, servers: [...selB], duration_minutes: mins ? Number(mins) : undefined, appeal_wait_days: ($('b-appeal-wait').value.trim() === '' ? 0 : Math.max(Number($('b-appeal-wait').value) || 0, 0)), dm_invite: $('b-dm') ? $('b-dm').checked : true }) });
+  const j = await r.json().catch(() => ({}));
+  if (!j.ok) return toast('Failed: ' + (j.error || r.status), 'err');
+  const bits = ['Ban recorded'];
+  if (j.invite && j.invite.url) bits.push('invite minted');
+  else if (j.invite && j.invite.error) bits.push('invite failed: ' + j.invite.error);
+  if (j.dm && j.dm.sent) bits.push('appeal link DM’d');
+  else if (j.dm && j.dm.error) bits.push('DM failed: ' + j.dm.error);
+  toast(bits.join(' · '), 'good');
+  loadServers();
+  loadBans();
 };
 loadBans();
 
@@ -192,9 +317,11 @@ async function loadTimeouts() {
 }
 $('t-create').onclick = async () => {
   const body = { user_id: $('t-user').value.trim(), server: $('t-server').value, duration_minutes: Number($('t-mins').value) || 60, reason: $('t-reason').value.trim() };
-  if (!body.user_id || !body.reason) return alert('User and reason required');
+  if (!body.user_id || !body.reason) return toast('User and reason required', 'err');
+  if (!body.server) return toast('Pick a server first — none loaded', 'err');
   const r = await api('/api/timeouts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  alert(JSON.stringify(await r.json())); loadTimeouts();
+  const j = await r.json().catch(() => ({}));
+  toast(j.ok ? 'Timeout set' : ('Failed: ' + (j.error || r.status)), j.ok ? 'good' : 'err'); loadTimeouts();
 };
 loadTimeouts();
 
@@ -214,12 +341,6 @@ async function loadInfractions() {
   const j = await r.json();
   $('i-list').innerHTML = j.timeline.length ? '<table><tr><th>Kind</th><th>Date</th><th>Detail</th></tr>' + j.timeline.map((t) => '<tr><td><span class="badge">' + esc(t.kind) + '</span></td><td class="dim">' + esc((t.created_at||'').slice(0,16)) + '</td><td>' + detailFor(t) + '</td></tr>').join('') + '</table>' : '<div class="empty">No history for that user.</div>';
 }
-$('i-add').onclick = async () => {
-  const body = { user_id: $('i-user').value.trim(), type: $('i-type').value, reason: $('i-reason').value.trim() };
-  if (!body.user_id || !body.reason) return alert('User and reason required');
-  const r = await api('/api/infractions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  alert(JSON.stringify(await r.json())); loadInfractions();
-};
 $('i-load').onclick = loadInfractions;
 
 // Appeals
@@ -227,7 +348,7 @@ async function loadAppeals() {
   const r = await api('/api/appeals?status=' + $('a-status').value); if (!r.ok) return;
   const j = await r.json();
   $('a-list').innerHTML = j.items.length ? '<table><tr><th>Ban</th><th>User</th><th>Status</th><th>Date</th><th></th></tr>' + j.items.map((a) => '<tr><td>' + esc(a.ban_id.slice(0,8)) + '</td><td>' + esc(a.user_id) + '</td><td>' + esc(a.status) + '</td><td class="dim">' + esc((a.created_at||'').slice(0,10)) + '</td><td>' + (a.status === 'open' ? '<button class="btn ghost" data-app="' + a.id + '" data-v="approved">Approve</button> <button class="btn ghost" data-app="' + a.id + '" data-v="denied">Deny</button>' : '') + '</td></tr>').join('') + '</table>' : '<div class="empty">No appeals.</div>';
-  document.querySelectorAll('[data-app]').forEach((x) => x.onclick = async () => { await api('/api/appeals/' + x.dataset.app + '/' + x.dataset.v, { method: 'POST' }); loadAppeals(); });
+  document.querySelectorAll('[data-app]').forEach((x) => x.onclick = async () => { const v = x.dataset.v === 'approved' ? 'approve' : x.dataset.v === 'denied' ? 'deny' : x.dataset.v; await api('/api/appeals/' + x.dataset.app + '/' + v, { method: 'POST' }); loadAppeals(); });
 }
 $('a-load').onclick = loadAppeals;
 loadAppeals();
@@ -243,9 +364,10 @@ async function loadLinks() {
 $('l-load').onclick = loadLinks;
 $('l-save').onclick = async () => {
   const body = { discord_id: $('l-discord').value.trim() || $('b-user').value.trim(), platform: 'discourse', external_id: $('l-forum-id').value.trim(), external_username: $('l-forum-name').value.trim() };
-  if (!body.discord_id || !body.external_id) return alert('Discord ID + forum user ID required');
+  if (!body.discord_id || !body.external_id) return toast('Discord ID + forum user ID required', 'err');
   const r = await api('/api/links', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  alert(JSON.stringify(await r.json())); loadLinks();
+  const j = await r.json().catch(() => ({}));
+  toast(j.ok ? 'Forum link saved' : ('Failed: ' + (j.error || r.status)), j.ok ? 'good' : 'err'); loadLinks();
 };
 
 // Notes
@@ -257,12 +379,49 @@ async function loadNotes() {
   $('n-list').innerHTML = j.items.length ? '<table><tr><th>Date</th><th>Mod</th><th>Note</th><th>Evidence</th></tr>' + j.items.map((n) => '<tr><td class="dim">' + esc((n.created_at||'').slice(0,16)) + '</td><td>' + esc(n.mod_id) + '</td><td>' + esc(n.note) + '</td><td>' + (n.mail_item_id ? '<a style="color:var(--b)" href="/mail/inbox/?q=' + encodeURIComponent(n.mail_item_id) + '">' + esc(String(n.mail_item_id).slice(0,8)) + '</a>' : '<span class="dim">—</span>') + '</td></tr>').join('') + '</table>' : '<div class="empty">No notes for that user.</div>';
 }
 $('n-add').onclick = async () => {
-  const body = { user_id: $('n-user').value.trim(), note: $('n-text').value.trim(), mail_item_id: $('n-mail').value.trim() || undefined };
-  if (!body.user_id || !body.note) return alert('User and note required');
+  const body = { user_id: $('n-user').value.trim(), server: $('n-server') ? $('n-server').value : '', note: $('n-text').value.trim(), mail_item_id: $('n-mail').value.trim() || undefined };
+  if (!body.user_id || !body.note) return toast('User and note required', 'err');
   const r = await api('/api/user-notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  alert(JSON.stringify(await r.json())); $('n-text').value = ''; loadNotes();
+  const j = await r.json().catch(() => ({}));
+  toast(j.ok ? 'Note saved' : ('Failed: ' + (j.error || r.status)), j.ok ? 'good' : 'err'); $('n-text').value = ''; loadNotes();
 };
 $('n-load').onclick = loadNotes;
+
+// Records (per-user forum threads + full timeline)
+async function loadRecord() {
+  const user = ($('r-user').value || '').trim();
+  if (!/^\d{10,}$/.test(user)) return $('r-timeline').innerHTML = '<div class="empty">Enter a valid user ID.</div>';
+  const r = await api('/api/records/' + encodeURIComponent(user)); if (!r.ok) { const e = await r.json().catch(() => ({})); return $('r-timeline').innerHTML = '<div class="empty">' + esc(e.error || 'Failed to load record') + '</div>'; }
+  const j = await r.json();
+  $('r-links').innerHTML = j.records.length
+    ? 'Record threads: ' + j.records.map((x) => '<a style="color:var(--b)" target="_blank" rel="noopener" href="' + esc(x.url) + '">' + esc(x.slug) + '</a>' + (x.last_post_at ? ' <span class="dim">(active ' + esc(x.last_post_at.slice(0,10)) + ')</span>' : '')).join(' · ')
+    : 'No record thread yet for this user — pick a server and hit “Create / link thread”, or take any action and one is created automatically.';
+  $('r-timeline').innerHTML = j.timeline.length ? '<table><tr><th>Kind</th><th>Date</th><th>Detail</th></tr>' + j.timeline.map((t) => '<tr><td><span class="badge">' + esc(t.kind) + '</span></td><td class="dim">' + esc((t.created_at||'').slice(0,16)) + '</td><td>' + detailFor(t) + '</td></tr>').join('') + '</table>' : '<div class="empty">No history for that user.</div>';
+}
+$('r-load').onclick = loadRecord;
+$('r-ensure').onclick = async () => {
+  const user = ($('r-user').value || '').trim();
+  if (!/^\d{10,}$/.test(user)) return toast('Enter a valid user ID', 'err');
+  const slug = $('r-server') ? $('r-server').value : '';
+  if (!slug) return toast('Pick a server first — none loaded', 'err');
+  const r = await api('/api/records/' + encodeURIComponent(user) + '/ensure', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug }) });
+  const j = await r.json().catch(() => ({}));
+  toast(j.ok ? (j.created ? 'Record thread created' : 'Record thread linked') : ('Failed: ' + (j.error || r.status)), j.ok ? 'good' : 'err'); loadRecord();
+};
+
+// DM a user via the bot
+$('d-send').onclick = async () => {
+  const user = ($('d-user').value || '').trim();
+  if (!/^\d{10,}$/.test(user)) return toast('Enter a valid user ID', 'err');
+  const text = ($('d-text').value || '').trim();
+  if (!text) return toast('Enter a message', 'err');
+  const slug = $('d-server') ? $('d-server').value : '';
+  const r = await api('/api/dm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: user, server: slug, action: ($('d-action').value || '').trim(), message: text }) });
+  const j = await r.json().catch(() => ({}));
+  toast(j.ok ? 'DM sent' : ('Failed: ' + (j.error || r.status)), j.ok ? 'good' : 'err');
+  if (j.ok) $('d-text').value = '';
+};
+loadServers();
 </script>
 </body>
 </html>
