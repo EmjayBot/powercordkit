@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { pollDiscord, backfillDiscordThreads, setThreadState } from './poll';
-import modTools, { expireBans, expireTimeouts, upsertIdentityLink, checkSlowmodeSchedules } from './modtools';
+import modTools, { expireBans, expireTimeouts, upsertIdentityLink, checkSlowmodeSchedules, handleSlashCommand } from './modtools';
 import { verifyAccessJwt } from './access';
 import {
   discordLoginUrl,
@@ -823,11 +823,15 @@ app.post('/hooks/discord-interactions', async (c) => {
   if (!ok) return new Response('Invalid signature', { status: 401 });
   let body: {
     type?: number;
+    token?: string;
     guild_id?: string;
     channel_id?: string;
-    member?: { roles?: string[] };
+    user?: { id?: string };
+    member?: { roles?: string[]; user?: { id?: string } };
     data?: {
       type?: number;
+      name?: string;
+      options?: { name?: string; value?: unknown }[];
       target_id?: string;
       resolved?: { messages?: Record<string, { content?: string; author?: { username?: string; global_name?: string }; guild_id?: string; channel_id?: string }> };
     };
@@ -871,19 +875,54 @@ app.post('/hooks/discord-interactions', async (c) => {
     jsonLog('info', 'idea saved from discord command', { target: targetId });
     return c.json({ type: 4, data: { content: '📌 Saved to the inbox as an idea.', flags: 64 } });
   }
+  if (body.type === 2 && body.data?.type === 1) {
+    // Slash quick actions (/ban, /timeout, /unban). Mod roles only, checked
+    // from the interaction member list — no extra API round-trip.
+    const allowed = (c.env.DISCORD_MOD_ROLE_IDS ?? '').split(',').map((r) => r.trim()).filter(Boolean);
+    const memberRoles = body.member?.roles ?? [];
+    const modId = body.member?.user?.id ?? body.user?.id ?? 'slash';
+    if (allowed.length && !allowed.some((r) => memberRoles.includes(r))) {
+      return c.json({ type: 4, data: { content: '🔒 Mods only.', flags: 64 } });
+    }
+    const name = String(body.data?.name ?? '');
+    const opts: Record<string, unknown> = {};
+    for (const o of body.data?.options ?? []) {
+      if (o?.name) opts[o.name] = o.value;
+    }
+    const token = body.token ?? '';
+    const appId = c.env.DISCORD_CLIENT_ID ?? '';
+    // Deferred ACK (ephemeral) now; the mod action runs in waitUntil so the
+    // 3s interaction window never binds. Followup edits the deferred message.
+    c.executionCtx.waitUntil((async () => {
+      try {
+        const text = await handleSlashCommand(c.env, { name, opts, guildId: body.guild_id ?? '', modId: String(modId) });
+        if (token && appId) {
+          await fetch(`https://discord.com/api/v10/webhooks/${appId}/${token}/messages/@original`, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ content: String(text).slice(0, 1900) }),
+          });
+        }
+      } catch (err) {
+        jsonLog('error', 'slash followup failed', { error: String(err) });
+      }
+    })());
+    return c.json({ type: 5, data: { flags: 64 } });
+  }
   return c.json({ type: 4, data: { content: 'Unsupported interaction.', flags: 64 } });
 });
 
-// Register the "Save as Idea" message context-menu command (one-time; admin).
+// Register guild commands (one-time; admin): "Save as Idea" message command +
+// /ban, /timeout, /unban slash commands. Bulk PUT overwrites the guild set,
+// so re-running is idempotent. Requires the applications.commands scope.
 app.post('/api/admin/register-commands', async (c) => {
   try {
     const token = c.env.DISCORD_BOT_TOKEN;
     const appId = c.env.DISCORD_CLIENT_ID;
     if (!token || !appId) return bad('Discord not configured', 400);
-    const def = { name: 'Save as Idea', type: 3, integration_types: [0], contexts: [0, 1, 2] };
-    const auth = { Authorization: 'Bot ' + token };
-    // Remove any existing GLOBAL commands so only the guild command remains
-    // (prevents the command from showing twice in the menu).
+    const auth = { Authorization: 'Bot ' + token, 'content-type': 'application/json' };
+    // Remove any existing GLOBAL commands so only guild commands remain
+    // (prevents commands from showing twice).
     const gl = await fetch(`https://discord.com/api/v10/applications/${appId}/commands`, { headers: auth });
     const existing = (await gl.json()) as { id?: string }[];
     const deleted: string[] = [];
@@ -892,19 +931,58 @@ app.post('/api/admin/register-commands', async (c) => {
       await fetch(`https://discord.com/api/v10/applications/${appId}/commands/${cmd.id}`, { method: 'DELETE', headers: auth });
       deleted.push(cmd.id);
     }
-    let guildResult: unknown = null;
+    // Server picker options from MOD_TOOL_SERVERS (value = slug).
+    let serverChoices: { name: string; value: string }[] = [];
+    try {
+      const map = JSON.parse(c.env.MOD_TOOL_SERVERS ?? '{}') as Record<string, { name?: string }>;
+      serverChoices = Object.keys(map)
+        .filter((s) => s !== 'discourse')
+        .slice(0, 25)
+        .map((s) => ({ name: String(map[s]?.name || s).slice(0, 100), value: s }));
+    } catch { /* no choices — free default applies */ }
+    const serverOpt = (desc: string, required: boolean) => ({
+      name: 'server', description: desc, type: 3, required,
+      ...(serverChoices.length ? { choices: serverChoices } : {}),
+    });
+    const userOpt = (desc: string) => ({ name: 'user', description: desc, type: 6, required: true });
+    const reasonOpt = { name: 'reason', description: 'Why', type: 3, required: true };
+    const commands = [
+      { name: 'Save as Idea', type: 3, integration_types: [0], contexts: [0, 1, 2] },
+      {
+        name: 'ban', description: 'Ban a user (mods only)', type: 1,
+        default_member_permissions: '4', dm_permission: false,
+        options: [
+          userOpt('User to ban'), reasonOpt,
+          serverOpt('Server (defaults to this one)', false),
+          { name: 'minutes', description: 'Temp ban length in minutes (omit = permanent)', type: 4, required: false, min_value: 1, max_value: 40320 },
+        ],
+      },
+      {
+        name: 'timeout', description: 'Timeout a user (mods only)', type: 1,
+        default_member_permissions: '1099511627776', dm_permission: false,
+        options: [
+          userOpt('User to timeout'),
+          { name: 'minutes', description: 'Timeout length in minutes', type: 4, required: true, min_value: 1, max_value: 40320 },
+          serverOpt('Server (defaults to this one)', false),
+          reasonOpt,
+        ],
+      },
+      {
+        name: 'unban', description: 'Lift all active bans for a user (mods only)', type: 1,
+        default_member_permissions: '4', dm_permission: false,
+        options: [userOpt('User to unban')],
+      },
+    ];
+    let guildCommands: string[] = [];
     if (c.env.DISCORD_GUILD_ID) {
       const gr = await fetch(
         `https://discord.com/api/v10/applications/${appId}/guilds/${c.env.DISCORD_GUILD_ID}/commands`,
-        {
-          method: 'POST',
-          headers: { ...auth, 'content-type': 'application/json' },
-          body: JSON.stringify(def),
-        },
+        { method: 'PUT', headers: auth, body: JSON.stringify(commands) },
       );
-      guildResult = await gr.json();
+      const gj = (await gr.json()) as { name?: string }[] | { message?: string; code?: number };
+      guildCommands = Array.isArray(gj) ? gj.map((x) => x?.name ?? '?') : ['error: ' + JSON.stringify(gj).slice(0, 200)];
     }
-    return c.json({ ok: true, deletedGlobal: deleted, guildResult });
+    return c.json({ ok: true, deletedGlobal: deleted, guildCommands });
   } catch (err) {
     jsonLog('error', 'register commands failed', { error: String(err) });
     return bad('Register failed', 500);
