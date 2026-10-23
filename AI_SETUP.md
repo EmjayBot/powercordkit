@@ -48,7 +48,7 @@ Goal: help a user **self-host the Mail inbox** end to end.
     - command-only: `{tools:false, inbox:false, modtools:true}`
     The same flags prune the static build (`scripts/build-tools.mjs` drops disabled routes from `dist/tools`).
   - Per-deployment branding: add `"environments": { "personal": { "siteName": "PowerCordKit", "header": { "brand": "PowerCordKit" } } }`. The shell reads `ENVIRONMENT` from `/api/health` and merges the matching block, so one shared `public/` can brand each deployment differently.
-- **`PUBLIC_ROADMAP`** (wrangler var, default `1`): set to `0` to make `GET /api/roadmap` require login (private roadmap). The `/roadmap/` page then shows a log-in prompt.
+- **`PUBLIC_ROADMAP`** (wrangler var, default `1`): `1` = logged-out visitors see the **public slice** of the roadmap (items flagged Public); authed mods always see the **full board** (`GET /api/roadmap?scope=full`, or default when authed). Set to `0` to 401 logged-out visitors entirely (fully private roadmap — the `/roadmap/` page then shows a log-in prompt).
 - **`DEFAULT_SERVER`**, **`FEED_MAP`**, **`POLL_DEBUG`** (wrangler vars) — see below.
 
 ## Inputs to collect (ask the user)
@@ -200,8 +200,8 @@ Promote an idea: `POST /api/inbox/<id>/roadmap` with `{"status":"planned|in-prog
 ```json
 {
   "required": ["DEFAULT_SERVER", "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SESSION_SECRET", "DISCORD_GUILD_ID", "DISCORD_MOD_ROLE_IDS", "DISCORD_PUBLIC_KEY", "DISCORD_BOT_TOKEN"],
-  "optional": ["DISCORD_IDEA_ROLE_IDS", "DISCORD_COMPLETE_TAG", "DISCORD_WEBHOOK_SECRET", "DISCOURSE_WEBHOOK_SECRET", "FORUM_WEBHOOK_SECRET", "MOD_API_KEY", "ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "DISCOURSE_BASE_URL", "DISCOURSE_ADMIN_KEY", "MOD_TOOL_SERVERS", "ARCHIVE_GITHUB_REPO", "ARCHIVE_GITHUB_TOKEN", "ARCHIVE_DISCORD_WEBHOOK_URL", "PERSONAL_DOMAIN", "COMMUNITY_DOMAIN"],
-  "vars": ["DEFAULT_SERVER", "FEED_MAP", "ENVIRONMENT", "COMMUNITY_DOMAIN", "PERSONAL_DOMAIN", "MOD_TOOL_SERVERS", "PUBLIC_ROADMAP", "MAX_PAYLOAD_BYTES"],
+  "optional": ["DISCORD_IDEA_ROLE_IDS", "DISCORD_COMPLETE_TAG", "DISCORD_WEBHOOK_SECRET", "DISCOURSE_WEBHOOK_SECRET", "FORUM_WEBHOOK_SECRET", "MOD_API_KEY", "ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "DISCOURSE_BASE_URL", "DISCOURSE_ADMIN_KEY", "MOD_TOOL_SERVERS", "ARCHIVE_GITHUB_REPO", "ARCHIVE_GITHUB_TOKEN", "ARCHIVE_DISCORD_WEBHOOK_URL", "DISCOURSE_ARCHIVE_CATEGORY_ID", "PERSONAL_DOMAIN", "COMMUNITY_DOMAIN"],
+  "vars": ["DEFAULT_SERVER", "FEED_MAP", "ENVIRONMENT", "COMMUNITY_DOMAIN", "PERSONAL_DOMAIN", "MOD_TOOL_SERVERS", "PUBLIC_ROADMAP", "MAX_PAYLOAD_BYTES", "DISCOURSE_ARCHIVE_CATEGORY_ID"],
   "secrets": ["DISCORD_CLIENT_SECRET", "DISCORD_PUBLIC_KEY", "DISCORD_BOT_TOKEN", "SESSION_SECRET", "DISCORD_WEBHOOK_SECRET", "DISCOURSE_WEBHOOK_SECRET", "MOD_API_KEY", "DISCOURSE_ADMIN_KEY", "ARCHIVE_GITHUB_TOKEN"],
   "config": "wrangler.community.jsonc"
 }
@@ -219,7 +219,9 @@ works across isolates).
 
 **Config**
 - `MOD_TOOL_SERVERS` (wrangler var, JSON): map of `"<slug>": { "guild": "<guild-id>" }`
-  for each server you moderate via Discord.
+  for each server you moderate via Discord. Optional per-slug keys: `"name"`
+  (display label shown in dropdowns and inbox filters, e.g. `"The East Pacific"` —
+  the slug itself stays the value sent to the API), `"records_forum"`, `"records_tag"`.
   **Manual setup (no AI) — three steps:**
   1. In `wrangler.community.local.jsonc` → `"vars"`, add (one entry per guild):
      `"MOD_TOOL_SERVERS": "{\"my-server\": {\"guild\": \"<guild-id>\"}}"`
@@ -228,6 +230,13 @@ works across isolates).
   3. Verify: `GET /api/modtools/servers` (mod session or `X-Mod-Key` header) should list
      your slugs, and `/modtools/` shows them in the server picker. An empty list means
      the var didn't deploy — re-check the escaping and redeploy.
+- Record threads (optional): add `"records_forum": "<forum-channel-id>"` alongside
+  `guild` in a slug entry to link every user to a thread in a staff-only Discord forum
+  channel — the first Command action (ban/timeout/infraction/appeal/note) creates the
+  thread, every later action posts into it. Search users in `/modtools/` → Records tab
+  (`GET /api/records/:user`, `POST /api/records/:user/ensure`, `GET /api/records`).
+  The forum must not require tags; the bot needs View Channel + Send Messages +
+  Read Message History + Manage Threads on it. Table: `migrations/0010_user_records.sql`.
 - Secrets: if syncing suspends to Discourse, add `DISCOURSE_BASE_URL` and
   `DISCOURSE_ADMIN_KEY` (Admin → API → Create key, `suspend` permission).
 - Identity linking (Discord <-> forum, different usernames OK):
@@ -241,8 +250,10 @@ works across isolates).
   5GB total / 500MB per DB): retention cron archives 90d+ inbox items + notes
   before delete. `ARCHIVE_GITHUB_REPO` (`owner/repo`, private) + `ARCHIVE_GITHUB_TOKEN`
   = truth (one issue per item, label `mod-archive`); `ARCHIVE_DISCORD_WEBHOOK_URL` =
-  mirror summary. Manual: `POST /api/admin/archive-now`. Without either var,
-  purge just deletes (old behavior).
+  mirror summary; `DISCOURSE_BASE_URL` + `DISCOURSE_ADMIN_KEY` + `DISCOURSE_ARCHIVE_CATEGORY_ID`
+  = browsable paper trail (one topic per item in a staff-only subcategory; same key as suspend sync).
+  Test the forum path with `POST /api/admin/archive-test` (posts one clearly-labelled topic — safe to delete).
+  Manual: `POST /api/admin/archive-now`. Without any archive backend, purge just deletes (old behavior).
 
 **Bot permissions** — the bot needs **Ban Members** (bans) and
 **Moderate Members / Manage Members** (timeouts) on every guild in
@@ -253,13 +264,15 @@ write is audited and rate-limited):
 
 | Tool | Route | Notes |
 |---|---|---|
-| Bans | `POST/GET /api/bans` · `POST /api/bans/:id/unban` | `PUT/DELETE /guilds/{g}/bans/{u}` (parallel, retry); `POST /admin/users/{id}/suspend` on Discourse; temp `duration_minutes` auto-unbans via cron expiry |
+| Bans | `POST/GET /api/bans` · `POST /api/bans/:id/unban` | `PUT/DELETE /guilds/{g}/bans/{u}` (parallel, retry); `POST /admin/users/{id}/suspend` on Discourse; temp `duration_minutes` auto-unbans via cron expiry; `appeal_wait_days` sets the appeal delay (0 = immediate); `dm_invite` (default true) auto-DMs the appeal link |
 | Timeouts | `POST/GET /api/timeouts` · `POST /api/timeouts/:id/remove` | `PATCH /guilds/{g}/members/{u}` `communication_disabled_until`; cron expires + deactivates (every 2 min on community, daily on personal) |
 | Apply (bot) | `POST /api/apply/slowmode` · `POST /api/apply/lockdown` | Apply lives on the **inbox card**, not the public planner: planners mail the plan (with server + channel IDs), mods hit ⚡ Apply via bot on the card; slowmode sets `rate_limit_per_user`, lockdown sets @everyone overwrites + exempt-role allows; audited + mailed to inbox |
 | Schedules | `GET/POST /api/slowmode-schedules` · `DELETE /api/slowmode-schedules/:id` | Time-based slowmode: per-channel day/night secs on a UTC window (`22:00–07:00`, wrap OK); Worker cron checks every few minutes (needs a frequent cron like `*/5 * * * *`) and PATCHes only on transitions; audited + mailed |
 | Infractions | `POST/GET /api/infractions` · `GET /api/infractions/:user/timeline` | Adds warnings; timeline merges bans/timeouts/infractions/appeals/**notes**; evidence `mail_item_id` links to inbox |
-| Appeals | `POST /hooks/appeal` (public) · `GET /api/appeals` · `POST /api/appeals/:id/approve|deny` | Public form (ban must belong to user, 1 per ban/24h + 5/hr per IP, honeypot, IP *hash*); creates a Mail item `type=appeal`; Approve triggers full unban (Discord + Discourse) |
+| Appeals | `POST /hooks/appeal` (public) · `GET /api/appeals` · `POST /api/appeals/:id/approve|deny` | Public form (one appeal per user, per-ban wait enforced, IP brake + honeypot, IP *hash*); creates a Mail item `type=appeal`; Approve triggers full unban (Discord + Discourse) |
+| Appeal links | `POST /api/appeal-links` · `GET /hooks/appeal-link` · `GET /hooks/appeal-lookup` · public `/appeals/` form | Expiring (1–30d, default 7), single-use invite per ban; DM the link, or skip links entirely — the form also finds bans by user ID |
 | Notes | `POST/GET /api/user-notes` · `GET /api/user-notes/:user` | Per-user private notes surfaced in Mail detail + timeline + Notes tab (`/modtools/`) |
+| DM | `POST /api/dm` | One-way mod-team DM via the bot (mirrored to the record thread; reports "DMs closed" gracefully; replies are not monitored) |
 
 **Rates (D1-backed):** bans 5/min, timeouts 10/min, appeals 1 per ban per 24h + 5/hr per IP, notes
 20/min (per mod).
