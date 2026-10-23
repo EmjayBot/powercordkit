@@ -155,13 +155,14 @@ Wait ~2 min for the cron (`*/2 * * * *`), or check Worker logs: `npx wrangler ta
 - feed not in `FEED_MAP`, or
 - empty message text ⇒ **Message Content Intent** is off.
 
-Repair/backfill existing items: `POST /api/admin/backfill-threads?limit=12` (auth: session or `X-Mod-Key`), repeat until `remaining` is 0.
+Repair/backfill existing items (while logged in as a mod in your browser console): `fetch('/api/admin/backfill-threads?limit=12', {method:'POST'}).then(r=>r.json()).then(console.log)`, repeat until `remaining` is 0.
 
-### 10. "Save as Idea" command
-```powershell
-curl -X POST https://<host>/api/admin/register-commands -H "X-Mod-Key: <MOD_API_KEY>"
+### 10. Discord commands ("Save as Idea" + /ban /timeout /unban)
+While logged in as a mod in your browser console (`F12` → Console):
+```js
+fetch('/api/admin/register-commands', {method:'POST'}).then(r=>r.json()).then(console.log)
 ```
-Registers a guild message command (instant). Requires the `applications.commands` scope in the guild.
+Registers guild commands (instant): the "Save as Idea" message command plus `/ban`, `/timeout`, `/unban` slash commands (mod roles only, server picker defaults to the guild used in). Requires the `applications.commands` scope in the guild — re-invite the bot with `scope=bot applications.commands` if commands don't appear.
 
 ### 11. Webhooks (optional)
 - Discord: `POST https://<host>/hooks/discord` header `X-Powercordkit-Secret: <DISCORD_WEBHOOK_SECRET>`, JSON `{server,type,title,content,author,by,url,prio}`.

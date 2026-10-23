@@ -16,7 +16,7 @@ apply the migration, set the vars, redeploy.
 | `public/assets/notice.png` | **New.** Banner image used by the DM card (`image.url`) |
 | `src/modtools.ts` | Record-thread helpers + hooks on every write path, `GET/POST /api/records/*`, `POST /api/dm`, `name`/`records_forum`/`records_tag` config keys, `discordMsg()` error surfacing, embed builder |
 | `src/index.ts` | `/api/servers` now includes `name` per server (from `MOD_TOOL_SERVERS`); `/api/roadmap` is scope-aware (`?scope=full` for mods, public slice for guests) + `public` flag on promote |
-| `public/modtools/index.html` | Reworked Command UI (see §6) |
+| `public/modtools/index.html` | Reworked Command UI (see §7) |
 | `public/mail/inbox/index.html` | Server filter + compose dropdown show display names |
 | `public/slowmode/index.html`, `public/lockdown/index.html` | Server picker shows display names (values stay slugs) |
 | `AI_SETUP.md`, `public/ai-setup.md` | `MOD_TOOL_SERVERS` keys, records setup, DM row, `:local` config note |
@@ -77,16 +77,22 @@ DM-to-user card: title `Notice from {Server Name} Moderation Team`, description 
 | `GET /api/records/:user` | Record threads (`slug, thread_id, url, last_post_at`) + full D1 timeline |
 | `POST /api/records/:user/ensure {"slug"}` | Create/link a thread now |
 | `GET /api/records?limit=` | Recent record threads |
-| `POST /api/dm {user_id, server?, action?, message}` | Bot DM (see §7) |
+| `POST /api/dm {user_id, server?, action?, message}` | Bot DM (see §8) |
 | `GET /api/modtools/servers` | Unchanged shape `{servers: [slugs], names: {slug: label}}` (+ `discourse` entry when configured) |
 | `GET /api/servers` | Each entry now also has `name` |
 
-Timeline builder was extracted to shared `buildTimeline(db, user)` (bans+timeouts+infractions+appeals+notes, newest first).
+Timeline builder was extracted to shared `buildTimeline(db, user)` (bans+timeouts+infractions+appeals+notes, newest first). Ban/timeout/unban execution was extracted to shared `coreCreateBan` / `coreCreateTimeout` / `coreUnbanRow` / `coreUnbanUser` used by both REST and slash paths.
 
-## 6. Command UI (`public/modtools/index.html`)
+## 6. Discord slash commands (/ban, /timeout, /unban)
+
+- `src/index.ts` handles interaction type 2 (application command) in `/hooks/discord-interactions`: verifies the caller holds a `DISCORD_MOD_ROLE_IDS` role from the interaction member list, then **defers** (`type: 5`, ephemeral) and runs `handleSlashCommand()` from `modtools.ts` inside `waitUntil`, editing the deferred message with the result via webhook PATCH. Never blocks the 3s window.
+- Server picker: static `choices` built from `MOD_TOOL_SERVERS` at registration; omitting it defaults to the guild the command was used in (matched to a slug), else the first configured server.
+- Registration (`POST /api/admin/register-commands`, mod session): bulk PUTs the guild command set (Save as Idea + 3 slash commands with `default_member_permissions` and `dm_permission: false`) and deletes stray globals. Re-running is idempotent. Needs the `applications.commands` scope in the guild.
+
+## 7. Command UI (`public/modtools/index.html`)
 
 - Tabs: Bans · Timeouts · **History** (was Infractions, now **read-only lookup** — the Add form is gone) · Appeals · Notes · Records · **DM** (new).
-- Status bar under the header: green `● N servers connected: …` or a plain-English warning + **Retry**. Selects ship with a `Loading servers…` option so they are never blank; action buttons stay disabled until servers load; ban chips show a hint instead of emptiness.
+- Status bar appears only when something needs attention (loading failure / no servers + **Retry**); when healthy it hides — the server names are already visible in every dropdown and chip. Selects ship with a `Loading servers…` option so they are never blank; action buttons stay disabled until servers load; ban chips show a hint instead of emptiness.
 - Toasts replace `alert()` popups; kind badges styled; sticky tabs; per-pane hint lines.
 - Infractions/Notes pick a server (routes the record-thread post; falls back to the first forum-configured server).
 - History + Records panes share `detailFor()` rendering; `?user=` deep-links into History/Notes/Records.
@@ -95,11 +101,11 @@ Timeline builder was extracted to shared `buildTimeline(db, user)` (bans+timeout
 - Inbox detail (`public/mail/inbox/index.html` `toolCard`): any JSON content without a `tool` card (appeal answers, mailed plans, apply results) renders as key/value rows only — raw JSON is hidden. List previews show the apology text for appeals, labels for tool exports, and a placeholder for anything else.
 - Timestamps: `time` columns now store real ISO datetimes; the inbox renders relative dates from `created_at` ("just now" → "Mar 4, 2026"), fixing the old literal "now" labels on every mailed item, retroactively.
 
-## 7. DM behavior (one-way by design)
+## 8. DM behavior (one-way by design)
 
 `POST /api/dm` opens/creates the DM channel (`POST /users/@me/channels`) and sends the card. Replies from users are **not** monitored — the card and the UI say so. Closed DMs return `DMs closed — …` (HTTP 403 from Discord); unknown users return `Unknown user`. 10/min per-mod rate limit, audit-logged (`dm` / `dm_failed`), mirrored to the record thread when the slug has a forum.
 
-## 8. Appeal invite links (expiring, single-use)
+## 9. Appeal invite links (expiring, single-use)
 
 - **Table** (`migrations/0011_appeal_links.sql`): `token_hash` PK (SHA-256, plaintext shown once) → `ban_id, user_id, created_by, created_at, expires_at, used_at`.
 - **Mint:** `POST /api/appeal-links {ban_id, days?}` (mod auth; ban must be active; days 1–30, default 7) → `{url: "https://<host>/appeals/?token=…", expires_at}`. Ban rows have an **Invite** button that mints and pre-fills the DM tab with the link. **Auto-DM on ban:** `POST /api/bans` accepts `dm_invite` (default true; uncheck "DM appeal link" to skip) — mints the link and DMs it in the same second the ban lands, mirrors the outcome to the record thread. One live link per ban: minting supersedes (retires) previous unused links. `GET /api/bans` flags live links (`invite_active`, `invite_expires_at`), shown as a 🔗 badge; the button reads "New link" when one exists.
@@ -108,7 +114,7 @@ Timeline builder was extracted to shared `buildTimeline(db, user)` (bans+timeout
 - **Routing fix (`src/index.ts`):** `app.route('/', modTools)` is mounted *before* the generic `POST /hooks/:name` adapter — Hono matches overlapping routes in registration order, so the adapter was swallowing `POST /hooks/appeal*` ("Unknown adapter: appeal"). No path overlaps with the inbox's own `/api/*` routes, so the move is safe.
 - No new bot permissions (DM channel already works).
 
-## 9. Appeals: waits, one-per-user, login gates
+## 10. Appeals: waits, one-per-user, login gates
 
 - **Table** (`migrations/0012_ban_appeal_wait.sql`): `bans.appeal_wait_days INTEGER NOT NULL DEFAULT 0`.
 - **Wait:** Ban form "Appeal wait days" → `POST /api/bans {appeal_wait_days}` (0–3650, default 0). `POST /hooks/appeal` rejects early submits (`403 Appeals open {date}`); tokeninfo/lookup responses carry `eligible_at`, and the form disables submit until open.
@@ -116,13 +122,13 @@ Timeline builder was extracted to shared `buildTimeline(db, user)` (bans+timeout
 - **Login gates:** `/mail/`, `/mail/inbox/`, `/ideas/` skip the demo fallback when `GET /api/health` reports `env: community` — logged-out visitors get the locked screen instead. Marketing/personal keeps the badged demo.
 - **Forum log storage:** `archiveToDiscourse()` in `src/index.ts` posts one topic per purged item to a staff-only subcategory (`DISCOURSE_BASE_URL` + `DISCOURSE_ADMIN_KEY` — same key as suspend sync — + `DISCOURSE_ARCHIVE_CATEGORY_ID` var; any configured backend — GitHub, Discord, Discourse — runs each purge). `POST /api/admin/archive-test` (mod auth) posts one clearly-labelled topic to verify base URL + key + category + permissions. Set the three values, redeploy, run archive-test, check the subcategory, delete the test topic.
 
-## 10. Roadmap: public slice vs full board
+## 11. Roadmap: public slice vs full board
 
 - **Table** (`migrations/0013_roadmap_public.sql`): `inbox_items.roadmap_public INTEGER NOT NULL DEFAULT 0` (existing items stay mod-only).
 - **API:** `GET /api/roadmap` returns the full board for authed mods (`?scope=full` explicit), only `roadmap_public = 1` for guests; `?scope=full` logged-out → 401. `PUBLIC_ROADMAP=0` still 401s guests entirely (middleware). `POST /api/inbox/:id/roadmap` accepts `public: boolean` (Inbox detail → Public checkbox).
 - **UI:** `/roadmap/` detects the session — mods see "Full board (mod view)" with 🌐 badges on public items, guests see the public slice with a log-in nudge.
 
-## 11. Deploy + verify
+## 12. Deploy + verify
 
 ```powershell
 npm run db:migrate:remote:community   # applies 0010 (and any pending)

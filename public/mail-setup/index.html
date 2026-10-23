@@ -136,12 +136,12 @@ curl https://&lt;your-worker&gt;.workers.dev/api/health   # expect {"ok":true,"e
        "content":"(max 4000 chars, truncated server-side)","author":"user1"}'</pre>
   <p>Unknown adapter names → 404. To add a forum permanently, extend <code>FORUM_ADAPTERS</code> in <code>src/index.ts</code> — no other changes needed.</p>
 
-  <h2 id="ideas"><span class="n">★</span>“Save as Idea” — message context menu</h2>
-  <p>Right-click any message → <b>Apps → Save as Idea</b> files it into the inbox as an <code>idea</code>. It's a Discord message command, handled at <code>POST /hooks/discord-interactions</code> (Ed25519-verified with <code>DISCORD_PUBLIC_KEY</code>).</p>
+  <h2 id="ideas"><span class="n">★</span>“Save as Idea” + slash commands</h2>
+  <p>Right-click any message → <b>Apps → Save as Idea</b> files it into the inbox as an <code>idea</code>. It's a Discord message command, handled at <code>POST /hooks/discord-interactions</code> (Ed25519-verified with <code>DISCORD_PUBLIC_KEY</code>). The same endpoint serves <b>/ban</b>, <b>/timeout</b> and <b>/unban</b> slash commands (mod roles only — checked on every use).</p>
   <ol>
     <li>Set <code>DISCORD_PUBLIC_KEY</code> (App → General Information → Public Key).</li>
     <li>Developer Portal → App → <b>Interactions Endpoint URL</b> = <code>https://&lt;your-host&gt;/hooks/discord-interactions</code> → Save (Discord sends a PING; the Worker replies PONG).</li>
-    <li>Register the command: <code>POST /api/admin/register-commands</code> (auth with your mod session or <code>X-Mod-Key</code>). It creates a guild command for instant availability.</li>
+    <li>Register the commands (while logged in as a mod, browser console on your host): <code>fetch('/api/admin/register-commands',{method:'POST'}).then(r=>r.json()).then(console.log)</code>. It (re)creates the guild command set instantly: Save as Idea + /ban + /timeout + /unban.</li>
   </ol>
   <p>Who can submit: any member holding a role in <code>DISCORD_IDEA_ROLE_IDS</code> (defaults to <code>DISCORD_MOD_ROLE_IDS</code>); others get a “no permission” reply. The app must be authorized with the <code>applications.commands</code> scope in the guild (re-invite with <code>scope=bot applications.commands</code> if the command doesn't appear).</p>
 
